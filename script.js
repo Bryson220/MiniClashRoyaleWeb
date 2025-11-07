@@ -221,3 +221,5 @@ function App() {
     setOpponentUnits((units) => {
       let newUnits = units.map((unit) => {
         if (unit.hp <= 0) return null;
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<App />);
