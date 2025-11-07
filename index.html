@@ -2,21 +2,21 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Mini Clash Royale</title>
+<title>Mini Clash Royale - Shapes & Ranges</title>
 <style>
-  body { margin: 0; overflow: hidden; font-family: sans-serif; }
-  #game { position: relative; width: 1200px; height: 600px; margin: auto; background: #87ceeb; }
-  .river { position: absolute; top: 275px; width: 1200px; height: 50px; background: #00bfff; }
-  .tower { position: absolute; width: 80px; height: 120px; border-radius: 10px; color: #fff; font-weight: bold;
-           display: flex; justify-content: center; align-items: center; text-align:center; }
-  .player-tower { background: #4a90e2; left: 50px; top: 240px; }
-  .ai-tower { background: #e24a4a; right: 50px; top: 240px; }
-  .card { width: 60px; height: 60px; margin: 5px; cursor: grab; }
-  #hand { position: absolute; bottom: 10px; left: 10px; display: flex; z-index: 10; }
-  .unit { position: absolute; width: 40px; height: 40px; pointer-events: none; }
-  .hp-bar { position: absolute; height: 5px; background: red; }
-  .hp-fill { height: 5px; background: green; }
-  #elixir { position: absolute; top: 10px; left: 10px; font-weight: bold; z-index:10;}
+  body { margin:0; overflow:hidden; font-family:sans-serif; }
+  #game { position:relative; width:1200px; height:600px; margin:auto; background:#87ceeb; }
+  .river { position:absolute; top:275px; width:1200px; height:50px; background:#00bfff; }
+  .tower { position:absolute; width:80px; height:120px; border-radius:10px; color:#fff; font-weight:bold;
+           display:flex; justify-content:center; align-items:center; text-align:center; }
+  .player-tower { background:#4a90e2; left:50px; top:50px; }
+  .ai-tower { background:#e24a4a; right:50px; bottom:50px; }
+  .card { width:60px; height:60px; margin:5px; cursor:grab; }
+  #hand { position:absolute; bottom:10px; left:10px; display:flex; z-index:10; }
+  .unit { position:absolute; width:40px; height:40px; pointer-events:none; display:flex; justify-content:center; align-items:center; }
+  .hp-bar { position:absolute; height:5px; background:red; }
+  .hp-fill { height:5px; background:green; }
+  #elixir { position:absolute; top:10px; left:10px; font-weight:bold; z-index:10; }
 </style>
 </head>
 <body>
@@ -30,170 +30,197 @@
 </div>
 
 <script>
-// ------------------- Game Constants -------------------
+// ------------------- Constants -------------------
 const MAP_WIDTH = 1200;
 const MAP_HEIGHT = 600;
 const TOWER_HP_MAX = 5000;
 const ELIXIR_MAX = 10;
-const ELIXIR_REGEN = 1;
+const ELIXIR_REGEN = 0.357; // 1 elixir every 2.8 sec
 const ATTACK_COOLDOWN = 1000;
 
-// Card definitions
+// Cards with different shapes
 const CARD_DATA = [
-  { id: "archer", name: "Archer", hp: 50, dmg: 10, speed: 1.5, range: 100, cost: 3, img: "https://via.placeholder.com/60x60?text=A" },
-  { id: "giant", name: "Giant", hp: 200, dmg: 20, speed: 0.7, range: 30, cost: 5, img: "https://via.placeholder.com/60x60?text=G" },
-  { id: "knight", name: "Knight", hp: 100, dmg: 15, speed: 1, range: 30, cost: 4, img: "https://via.placeholder.com/60x60?text=K" },
-  { id: "minion", name: "Minion", hp: 30, dmg: 8, speed: 2, range: 50, cost: 2, img: "https://via.placeholder.com/60x60?text=M" }
+  { id:"archer", name:"Archer", hp:50, dmg:10, speed:1.5, range:150, cost:3, shape:"circle", color:"green" },
+  { id:"giant", name:"Giant", hp:200, dmg:20, speed:0.7, range:30, cost:5, shape:"square", color:"orange" },
+  { id:"knight", name:"Knight", hp:100, dmg:15, speed:1, range:30, cost:4, shape:"triangle", color:"gray" },
+  { id:"minion", name:"Minion", hp:30, dmg:8, speed:2, range:60, cost:2, shape:"diamond", color:"purple" }
 ];
 
-// ------------------- Game State -------------------
+// ------------------- State -------------------
 let playerElixir = ELIXIR_MAX;
+let aiElixir = ELIXIR_MAX;
 let playerUnits = [];
 let aiUnits = [];
 let lastUpdate = Date.now();
 let towers = {
-  player: { hp: TOWER_HP_MAX, x: 90, y: 240+60 },
-  ai: { hp: TOWER_HP_MAX, x: MAP_WIDTH - 90, y: 240+60 }
+  player:{hp:TOWER_HP_MAX, x:90, y:50+60},
+  ai:{hp:TOWER_HP_MAX, x:MAP_WIDTH-90, y:MAP_HEIGHT-50-60}
 };
 
-// ------------------- Utility Functions -------------------
-function clamp(value, min, max) { return Math.min(Math.max(value, min), max); }
-function distance(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
-
-// ------------------- Game Elements -------------------
+// ------------------- Elements -------------------
 const gameDiv = document.getElementById("game");
 const handDiv = document.getElementById("hand");
 const elixirDiv = document.getElementById("elixir");
 const playerTowerDiv = document.getElementById("player-tower");
 const aiTowerDiv = document.getElementById("ai-tower");
 
-// ------------------- Setup Player Hand -------------------
-CARD_DATA.forEach(card => {
-  const img = document.createElement("img");
-  img.src = card.img;
-  img.className = "card";
-  img.draggable = true;
-  img.title = `${card.name} (Cost: ${card.cost})`;
-  img.addEventListener("dragstart", e => {
-    if(playerElixir < card.cost) e.preventDefault();
-    e.dataTransfer.setData("cardId", card.id);
+// ------------------- Utility -------------------
+function clamp(v,min,max){return Math.min(Math.max(v,min),max);}
+function distance(a,b){return Math.hypot(a.x-b.x,a.y-b.y);}
+
+// ------------------- Player Hand -------------------
+CARD_DATA.forEach(card=>{
+  const img=document.createElement("div");
+  img.className="card";
+  img.style.backgroundColor=card.color;
+  img.style.display="flex";
+  img.style.justifyContent="center";
+  img.style.alignItems="center";
+  img.textContent=card.shape[0].toUpperCase();
+  img.draggable=true;
+  img.title=`${card.name} (Cost: ${card.cost})`;
+  img.addEventListener("dragstart",e=>{
+    if(playerElixir<card.cost) e.preventDefault();
+    e.dataTransfer.setData("cardId",card.id);
   });
   handDiv.appendChild(img);
 });
 
 // ------------------- Drag & Drop -------------------
-gameDiv.addEventListener("dragover", e => e.preventDefault());
-gameDiv.addEventListener("drop", e => {
+gameDiv.addEventListener("dragover", e=>e.preventDefault());
+gameDiv.addEventListener("drop", e=>{
   e.preventDefault();
-  const cardId = e.dataTransfer.getData("cardId");
+  const cardId=e.dataTransfer.getData("cardId");
   if(!cardId) return;
-  const card = CARD_DATA.find(c => c.id === cardId);
-  if(playerElixir < card.cost) return;
-  const rect = gameDiv.getBoundingClientRect();
-  const x = e.clientX - rect.left - 20;
-  const y = e.clientY - rect.top - 20;
-  if(y < MAP_HEIGHT/2) return; // can't place on opponent side
-  spawnUnit("player", card, x, y);
-  playerElixir -= card.cost;
+  const card=CARD_DATA.find(c=>c.id===cardId);
+  if(playerElixir<card.cost) return;
+  const rect=gameDiv.getBoundingClientRect();
+  const x=e.clientX-rect.left-20;
+  const y=e.clientY-rect.top-20;
+  if(y<MAP_HEIGHT/2) return;
+  spawnUnit("player", card, x, y, assignLane("player"));
+  playerElixir-=card.cost;
   updateElixir();
 });
 
-// ------------------- Spawn Units -------------------
-function spawnUnit(side, card, x, y) {
-  const unitDiv = document.createElement("div");
-  unitDiv.className = "unit";
-  unitDiv.style.left = x + "px";
-  unitDiv.style.top = y + "px";
-  unitDiv.style.backgroundImage = `url(${card.img})`;
-  unitDiv.style.backgroundSize = "cover";
+// ------------------- Lanes -------------------
+const LANES = {player:[MAP_HEIGHT/2+60, MAP_HEIGHT/2+120], ai:[MAP_HEIGHT/2-60, MAP_HEIGHT/2-120]};
+function assignLane(side){
+  const laneArray = LANES[side];
+  return laneArray[Math.floor(Math.random()*laneArray.length)];
+}
 
-  const hpBar = document.createElement("div");
-  hpBar.className = "hp-bar";
-  hpBar.style.left = x + "px";
-  hpBar.style.top = (y-8) + "px";
-  hpBar.style.width = "40px";
-  const hpFill = document.createElement("div");
-  hpFill.className = "hp-fill";
-  hpFill.style.width = "100%";
+// ------------------- Spawn Units -------------------
+function spawnUnit(side, card, x, y, laneY){
+  const unitDiv=document.createElement("div");
+  unitDiv.className="unit";
+  unitDiv.style.left=x+"px";
+  unitDiv.style.top=laneY+"px";
+  unitDiv.style.backgroundColor=card.color;
+  unitDiv.style.width="40px";
+  unitDiv.style.height="40px";
+
+  // Shapes
+  if(card.shape==="circle") unitDiv.style.borderRadius="50%";
+  else if(card.shape==="triangle") {
+    unitDiv.style.width="0"; unitDiv.style.height="0";
+    unitDiv.style.borderLeft="20px solid transparent";
+    unitDiv.style.borderRight="20px solid transparent";
+    unitDiv.style.borderBottom="40px solid "+card.color;
+    unitDiv.style.backgroundColor="transparent";
+  } else if(card.shape==="diamond"){
+    unitDiv.style.transform="rotate(45deg)";
+  }
+
+  const hpBar=document.createElement("div");
+  hpBar.className="hp-bar";
+  hpBar.style.left=x+"px";
+  hpBar.style.top=(laneY-8)+"px";
+  hpBar.style.width="40px";
+  const hpFill=document.createElement("div");
+  hpFill.className="hp-fill";
+  hpFill.style.width="100%";
   hpBar.appendChild(hpFill);
 
-  const unit = { side, card, x, y, hp: card.hp, div: unitDiv, hpDiv: hpFill, target: null, lastAttack: 0 };
+  const unit={side, card, x, y:laneY, hp:card.hp, div:unitDiv, hpDiv:hpFill, target:null, lastAttack:0};
   gameDiv.appendChild(unitDiv);
   gameDiv.appendChild(hpBar);
-  if(side === "player") playerUnits.push(unit);
+  if(side==="player") playerUnits.push(unit);
   else aiUnits.push(unit);
 }
 
-// ------------------- Elixir Update -------------------
-function updateElixir() { elixirDiv.textContent = `Elixir: ${Math.floor(playerElixir)}`; }
+// ------------------- Elixir -------------------
+function updateElixir(){elixirDiv.textContent=`Elixir: ${Math.floor(playerElixir)}`;}
 
 // ------------------- AI -------------------
-function aiPlay() {
-  const affordable = CARD_DATA.filter(c => c.cost <= ELIXIR_MAX);
-  if(affordable.length === 0) return;
-  const card = affordable[Math.floor(Math.random()*affordable.length)];
-  const x = MAP_WIDTH - 150;
-  const y = MAP_HEIGHT/2 - 50 + Math.random()*100;
-  spawnUnit("ai", card, x, y);
+function aiPlay(){
+  const affordable = CARD_DATA.filter(c=>c.cost<=aiElixir);
+  if(affordable.length===0) return;
+  const card=affordable[Math.floor(Math.random()*affordable.length)];
+  const x=MAP_WIDTH-150;
+  const laneY=assignLane("ai");
+  spawnUnit("ai", card, x, laneY, laneY);
+  aiElixir-=card.cost;
 }
 
 // ------------------- Game Loop -------------------
-function gameLoop() {
-  const now = Date.now();
-  const delta = (now - lastUpdate)/1000;
-  lastUpdate = now;
+function gameLoop(){
+  const now=Date.now();
+  const delta=(now-lastUpdate)/1000;
+  lastUpdate=now;
 
   // Elixir regen
-  playerElixir = clamp(playerElixir + ELIXIR_REGEN*delta, 0, ELIXIR_MAX);
+  playerElixir=clamp(playerElixir+ELIXIR_REGEN*delta,0,ELIXIR_MAX);
+  aiElixir=clamp(aiElixir+ELIXIR_REGEN*delta,0,ELIXIR_MAX);
   updateElixir();
 
-  // Function to update units
-  function updateUnits(units, enemies, enemyTower, isPlayer){
-    units.forEach(unit => {
-      if(unit.hp <= 0) return;
+  // AI plays randomly
+  if(Math.random()<0.01) aiPlay();
 
-      // Target closest enemy unit
-      let closest = null;
-      let distClosest = Infinity;
-      enemies.forEach(e => {
-        const d = distance(unit, e);
-        if(d < distClosest){ distClosest=d; closest=e; }
+  function updateUnits(units,enemies,enemyTower,isPlayer){
+    units.forEach(unit=>{
+      if(unit.hp<=0) return;
+
+      // Closest enemy in range
+      let closest=null;
+      let distClosest=Infinity;
+      enemies.forEach(e=>{
+        const d=distance(unit,e);
+        if(d<=unit.card.range && d<distClosest){distClosest=d; closest=e;}
       });
 
-      // Compare distance to tower
-      const dTower = distance(unit, enemyTower);
-      if(!closest || dTower < distClosest) closest = {x: enemyTower.x, y: enemyTower.y, isTower:true};
+      // Tower check
+      const dTower=distance(unit,enemyTower);
+      if(dTower<=unit.card.range && dTower<distClosest) closest={x:enemyTower.x,y:enemyTower.y,isTower:true};
 
-      unit.target = closest;
+      unit.target=closest;
 
-      // Move or attack
-      const dx = closest.x - unit.x;
-      const dy = closest.y - unit.y;
-      const dist = Math.hypot(dx,dy);
-      if(dist > unit.card.range){
-        unit.x += dx/dist*unit.card.speed*2;
-        unit.y += dy/dist*unit.card.speed*2;
-      } else {
-        if(now - unit.lastAttack > ATTACK_COOLDOWN){
-          unit.lastAttack = now;
+      if(closest){
+        const dx=closest.x-unit.x;
+        const dy=closest.y-unit.y;
+        const dist=Math.hypot(dx,dy);
+        if(now-unit.lastAttack>ATTACK_COOLDOWN){
+          unit.lastAttack=now;
           if(closest.isTower){
-            if(isPlayer) towers.ai.hp -= unit.card.dmg;
-            else towers.player.hp -= unit.card.dmg;
-          } else {
-            closest.hp -= unit.card.dmg;
-          }
+            if(isPlayer) towers.ai.hp-=unit.card.dmg;
+            else towers.player.hp-=unit.card.dmg;
+          } else closest.hp-=unit.card.dmg;
         }
+      } else {
+        // Move along lane
+        const dirX=isPlayer?1:-1;
+        unit.x+=dirX*unit.card.speed*2;
       }
 
       // Update visuals
-      unit.div.style.left = unit.x + "px";
-      unit.div.style.top = unit.y + "px";
-      if(unit.hpDiv) unit.hpDiv.style.width = (unit.hp/unit.card.hp*100) + "%";
+      unit.div.style.left=unit.x+"px";
+      unit.div.style.top=unit.y+"px";
+      if(unit.hpDiv) unit.hpDiv.style.width=(unit.hp/unit.card.hp*100)+"%";
     });
 
     // Remove dead units
     for(let i=units.length-1;i>=0;i--){
-      if(units[i].hp <= 0){
+      if(units[i].hp<=0){
         gameDiv.removeChild(units[i].div);
         if(units[i].hpDiv && units[i].hpDiv.parentElement) units[i].hpDiv.parentElement.remove();
         units.splice(i,1);
@@ -204,12 +231,8 @@ function gameLoop() {
   updateUnits(playerUnits, aiUnits, towers.ai, true);
   updateUnits(aiUnits, playerUnits, towers.player, false);
 
-  // Update tower HP visuals
-  playerTowerDiv.textContent = Math.max(0,towers.player.hp);
-  aiTowerDiv.textContent = Math.max(0,towers.ai.hp);
-
-  // AI random spawn
-  if(Math.random()<0.01) aiPlay();
+  playerTowerDiv.textContent=Math.max(0,towers.player.hp);
+  aiTowerDiv.textContent=Math.max(0,towers.ai.hp);
 
   requestAnimationFrame(gameLoop);
 }
@@ -217,7 +240,6 @@ function gameLoop() {
 // ------------------- Start -------------------
 updateElixir();
 gameLoop();
-
 </script>
 </body>
 </html>
