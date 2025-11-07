@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Mini Clash Royale - Lane Targeting</title>
+<title>Mini Clash Royale</title>
 <style>
   body { margin:0; overflow:hidden; font-family:sans-serif; }
   #game { position:relative; width:1200px; height:600px; margin:auto; background:#87ceeb; }
@@ -11,9 +11,9 @@
            display:flex; justify-content:center; align-items:center; text-align:center; }
   .player-tower { background:#4a90e2; left:50px; top:50px; }
   .ai-tower { background:#e24a4a; right:50px; bottom:50px; }
-  .card { width:60px; height:60px; margin:5px; cursor:grab; }
+  .card { width:60px; height:60px; margin:5px; cursor:grab; display:flex; justify-content:center; align-items:center; color:#fff; font-weight:bold; font-size:16px; }
   #hand { position:absolute; bottom:10px; left:10px; display:flex; z-index:10; }
-  .unit { position:absolute; width:40px; height:40px; pointer-events:none; display:flex; justify-content:center; align-items:center; }
+  .unit { position:absolute; width:40px; height:40px; pointer-events:none; display:flex; justify-content:center; align-items:center; font-size:16px; color:#fff; font-weight:bold; }
   .hp-bar { position:absolute; height:5px; background:red; }
   .hp-fill { height:5px; background:green; }
   #elixir { position:absolute; top:10px; left:10px; font-weight:bold; z-index:10; }
@@ -35,10 +35,10 @@ const MAP_WIDTH = 1200;
 const MAP_HEIGHT = 600;
 const TOWER_HP_MAX = 5000;
 const ELIXIR_MAX = 10;
-const ELIXIR_REGEN = 0.357; // 1 elixir every 2.8 sec
+const ELIXIR_REGEN = 0.357; // 1 elixir per 2.8 sec
 const ATTACK_COOLDOWN = 1000;
 
-// Cards with different shapes
+// Cards with shapes
 const CARD_DATA = [
   { id:"archer", name:"Archer", hp:50, dmg:10, speed:1.5, range:150, cost:3, shape:"circle", color:"green" },
   { id:"giant", name:"Giant", hp:200, dmg:20, speed:0.7, range:30, cost:5, shape:"square", color:"orange" },
@@ -53,8 +53,8 @@ let playerUnits = [];
 let aiUnits = [];
 let lastUpdate = Date.now();
 let towers = {
-  player:{hp:TOWER_HP_MAX, x:90, y:50+60},
-  ai:{hp:TOWER_HP_MAX, x:MAP_WIDTH-90, y:MAP_HEIGHT-50-60}
+  player:{hp:TOWER_HP_MAX, x:90, y:110},
+  ai:{hp:TOWER_HP_MAX, x:MAP_WIDTH-90, y:MAP_HEIGHT-110}
 };
 
 // ------------------- Elements -------------------
@@ -64,7 +64,7 @@ const elixirDiv = document.getElementById("elixir");
 const playerTowerDiv = document.getElementById("player-tower");
 const aiTowerDiv = document.getElementById("ai-tower");
 
-// ------------------- Utility -------------------
+// ------------------- Utilities -------------------
 function clamp(v,min,max){return Math.min(Math.max(v,min),max);}
 function distance(a,b){return Math.hypot(a.x-b.x,a.y-b.y);}
 
@@ -73,12 +73,9 @@ CARD_DATA.forEach(card=>{
   const img=document.createElement("div");
   img.className="card";
   img.style.backgroundColor=card.color;
-  img.style.display="flex";
-  img.style.justifyContent="center";
-  img.style.alignItems="center";
   img.textContent=card.shape[0].toUpperCase();
-  img.draggable=true;
   img.title=`${card.name} (Cost: ${card.cost})`;
+  img.draggable=true;
   img.addEventListener("dragstart",e=>{
     if(playerElixir<card.cost) e.preventDefault();
     e.dataTransfer.setData("cardId",card.id);
@@ -97,7 +94,7 @@ gameDiv.addEventListener("drop", e=>{
   const rect=gameDiv.getBoundingClientRect();
   const x=e.clientX-rect.left-20;
   const y=e.clientY-rect.top-20;
-  if(y<MAP_HEIGHT/2) return; // can't place on opponent side
+  if(y<MAP_HEIGHT/2) return; // can't drop on opponent side
   spawnUnit("player", card, x, y, assignLane("player"));
   playerElixir-=card.cost;
   updateElixir();
@@ -128,9 +125,7 @@ function spawnUnit(side, card, x, y, laneY){
     unitDiv.style.borderRight="20px solid transparent";
     unitDiv.style.borderBottom="40px solid "+card.color;
     unitDiv.style.backgroundColor="transparent";
-  } else if(card.shape==="diamond"){
-    unitDiv.style.transform="rotate(45deg)";
-  }
+  } else if(card.shape==="diamond") unitDiv.style.transform="rotate(45deg)";
 
   const hpBar=document.createElement("div");
   hpBar.className="hp-bar";
@@ -183,20 +178,17 @@ function gameLoop(){
 
       // ------------------- Targeting -------------------
       if(unit.card.id!=="giant"){
-        // Find closest enemy in range first
         let closest=null;
         let distClosest=Infinity;
         enemies.forEach(e=>{
           const d=distance(unit,e);
           if(d<=unit.card.range && d<distClosest){distClosest=d; closest=e;}
         });
-        // Tower check
         const dTower=distance(unit,enemyTower);
         if(dTower<=unit.card.range && dTower<distClosest) closest={x:enemyTower.x,y:enemyTower.y,isTower:true};
-
         unit.target=closest;
       } else {
-        unit.target={x:enemyTower.x,y:enemyTower.y,isTower:true}; // Giants ignore units
+        unit.target={x:enemyTower.x,y:enemyTower.y,isTower:true};
       }
 
       // ------------------- Actions -------------------
@@ -224,7 +216,6 @@ function gameLoop(){
       if(unit.hpDiv) unit.hpDiv.style.width=(unit.hp/unit.card.hp*100)+"%";
     });
 
-    // Remove dead units
     for(let i=units.length-1;i>=0;i--){
       if(units[i].hp<=0){
         gameDiv.removeChild(units[i].div);
