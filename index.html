@@ -1,452 +1,206 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<title>Clash Royale Lite — Lanes & AI</title>
-<meta name="viewport" content="width=device-width,initial-scale=1" />
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Clash Royale Lite</title>
 <style>
-  :root { --ui-height: 110px; }
-  html,body { margin:0; height:100%; background:#1e8f5f; font-family: Inter, Arial, sans-serif; }
-  #wrap { position:relative; width:100%; height:100vh; display:flex; align-items:center; justify-content:center; }
-  canvas { background: linear-gradient(#6ab04c,#4fa04b); border: 3px solid #193; box-shadow: 0 6px 18px rgba(0,0,0,0.35); display:block; }
-  #ui { position: absolute; bottom: 10px; left:50%; transform:translateX(-50%); display:flex; gap:18px; align-items:center; z-index:20; }
-  .card { width:64px; height:84px; background:#222; color:#fff; border-radius:8px; display:flex; flex-direction:column; justify-content:center; align-items:center; cursor:pointer; box-shadow: 0 4px 8px rgba(0,0,0,0.3); user-select:none; }
-  .card.small { width:48px;height:64px;font-size:12px }
-  .card .name { font-size:12px; margin-bottom:6px; text-align:center; }
-  .card .cost { background:rgba(255,255,255,0.06); padding:4px 6px; border-radius:6px; font-weight:700;}
-  #elixir { position:absolute; bottom: 130px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.55); color:#fff; padding:8px 12px; border-radius:10px; font-weight:700; z-index:20; }
-  #topInfo,#bottomInfo { position:absolute; left:12px; z-index:20; color:#fff; font-weight:700; text-shadow: 0 1px 0 rgba(0,0,0,0.6); }
-  #topInfo { top:8px } #bottomInfo { top:40px }
-  /* responsive */
-  @media (max-width:700px){
-    .card{ width:50px; height:70px }
-    #elixir{ font-size:14px }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #2c7a2c;
+    overflow: hidden;
+  }
+  canvas {
+    display: block;
+    margin: 0 auto;
+    background: linear-gradient(#3fa63f 40%, #2e8b57 50%, #3fa63f 60%);
+  }
+  #ui {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: white;
+    text-align: center;
+    font-family: sans-serif;
+  }
+  #elixirBar {
+    width: 300px;
+    height: 20px;
+    border: 2px solid white;
+    margin: 5px auto;
+    background: purple;
+  }
+  #elixirFill {
+    height: 100%;
+    background: violet;
+    width: 0%;
   }
 </style>
 </head>
 <body>
-<div id="wrap">
-  <canvas id="c"></canvas>
-
-  <div id="elixir">Elixir: 5</div>
-  <div id="topInfo">AI Tower HP: <span id="aiHP">5000</span></div>
-  <div id="bottomInfo" style="top:48px">Player Tower HP: <span id="playerHP">5000</span></div>
-
-  <div id="ui" aria-hidden="false">
-    <!-- Cards will be inserted by script if you want more change below -->
-    <div class="card" data-id="archer" style="background: #6f42c1;">
-      <div class="name">Archer</div><div class="cost">3</div>
-    </div>
-    <div class="card" data-id="knight" style="background: #2f80ed;">
-      <div class="name">Knight</div><div class="cost">3</div>
-    </div>
-    <div class="card" data-id="minion" style="background: #8b5cf6;">
-      <div class="name">Minion</div><div class="cost">2</div>
-    </div>
-    <div class="card" data-id="giant" style="background: #d97706;">
-      <div class="name">Giant</div><div class="cost">5</div>
-    </div>
-  </div>
+<div id="ui">
+  <h2>Clash Royale Lite</h2>
+  <div id="elixirBar"><div id="elixirFill"></div></div>
+  <div>Player Tower HP: <span id="playerHP"></span> | AI Tower HP: <span id="aiHP"></span></div>
 </div>
+<canvas id="game" width="600" height="800"></canvas>
 
 <script>
-/* =========================
-   Clash Royale Lite — Single-file
-   Features:
-   - vertical arena, 2 lanes (left/right)
-   - bridges over river; units only cross on bridges
-   - AI with elixir + cooldown + lane alternation
-   - towers auto-shoot; troops attack enemies in-lane first
-   - giant targets enemy tower only
-   - UI: cards, elixir, tower HP, troop health bars
-   - canvas rendering, responsive scaling
-   ========================= */
+const canvas=document.getElementById('game');
+const ctx=canvas.getContext('2d');
+const width=canvas.width, height=canvas.height;
+const riverY=height/2;
+const bridgeWidth=80, bridgeGap=150;
+const towers={player:{x:width/2, y:height-100, hp:5000}, ai:{x:width/2, y:100, hp:5000}};
+const units=[];
+let elixir=5, aiElixir=5;
+const elixirFill=document.getElementById("elixirFill");
+const playerHP=document.getElementById("playerHP");
+const aiHP=document.getElementById("aiHP");
+let lastSpawn=0, aiLastSpawn=0;
+const elixirRate=2.8*1000; // 1 elixir every 2.8s
 
-// Canvas & scaling
-const canvas = document.getElementById('c');
-const ctx = canvas.getContext('2d');
-const wrap = document.getElementById('wrap');
-let BASE_W = 600, BASE_H = 900;       // logical coordinates
-function resize() {
-  const maxW = Math.min(window.innerWidth - 20, BASE_W);
-  const maxH = Math.min(window.innerHeight - 20, BASE_H);
-  // Fit into window while preserving aspect
-  const scale = Math.min((window.innerWidth-40)/BASE_W, (window.innerHeight-120)/BASE_H);
-  const w = Math.round(BASE_W * scale);
-  const h = Math.round(BASE_H * scale);
-  canvas.width = BASE_W; canvas.height = BASE_H;
-  canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
-}
-window.addEventListener('resize', resize);
-resize();
+const cards=[
+  {id:"knight",shape:"circle",color:"blue",speed:1.2,range:25,damage:50,hp:300,cost:3,target:"any"},
+  {id:"archer",shape:"triangle",color:"cyan",speed:1.0,range:100,damage:30,hp:150,cost:3,target:"any"},
+  {id:"giant",shape:"square",color:"orange",speed:0.8,range:30,damage:80,hp:500,cost:5,target:"tower"}
+];
 
-// Arena geometry (logical)
-const RIVER_TOP = 360;
-const RIVER_BOTTOM = 540;
-const LANES_X = [BASE_W * 0.3, BASE_W * 0.7];
-const BRIDGES = [ {x:LANES_X[0]-60, w:120}, {x:LANES_X[1]-60, w:120} ];
-
-// Game constants
-const TOWER_HP = 5000;
-const ELIXIR_MAX = 10;
-const ELIXIR_REGEN_PER_SEC = 1 / 2.8; // 1 elixir every 2.8s
-const TICK_MS = 1000/60;
-const ATTACK_COOLDOWN = 800; // ms for units' basic attack
-const TOWER_RANGE = 160;
-const TOWER_DMG = 40;
-const AI_SPAWN_COOLDOWN_MS = 3000; // min spacing in ms between AI placements
-
-// Cards & stats (balanced-ish)
-const CARD_INFO = {
-  archer: { id:'archer', name:'Archer', hp:180, dmg:18, range:160, speed:1.6, cost:3, shape:'circle', color:'#6f42c1', type:'ranged'},
-  knight: { id:'knight', name:'Knight', hp:420, dmg:30, range:24, speed:1.2, cost:3, shape:'square', color:'#2f80ed', type:'melee'},
-  minion: { id:'minion', name:'Minion', hp:120, dmg:12, range:80, speed:2.0, cost:2, shape:'diamond', color:'#8b5cf6', type:'ranged'},
-  giant: { id:'giant', name:'Giant', hp:1200, dmg:65, range:30, speed:0.9, cost:5, shape:'square', color:'#d97706', type:'melee_towerfocus'}
-};
-
-// State
-let playerElixir = 5, aiElixir = 5;
-let lastElixirTick = performance.now();
-let units = []; // active troops
-let now = performance.now();
-let lastAiSpawn = 0;
-let aiLaneToggle = 0; // alternate lanes
-let towers = {
-  player: {x: BASE_W/2, y: BASE_H - 80, hp: TOWER_HP, cooldown:0},
-  ai: {x: BASE_W/2, y: 80, hp: TOWER_HP, cooldown:0}
-};
-
-// UI elements
-const elixirDisplay = document.getElementById('elixir');
-const aiHPdisplay = document.getElementById('aiHP');
-const playerHPdisplay = document.getElementById('playerHP');
-const cardEls = Array.from(document.querySelectorAll('.card'));
-let selectedCardId = null;
-
-// Utility
-function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
-function dist(a,b){ return Math.hypot(a.x-b.x, a.y-b.y); }
-function isInRiver(y){ return y > RIVER_TOP && y < RIVER_BOTTOM; }
-function insideBridgeX(x){ return BRIDGES.some(b => x > b.x && x < b.x + b.w); }
-
-// spawn function: side = "player" or "ai", laneX chosen automatically if null
-function spawn(side, cardId, x=null, y=null) {
-  const base = CARD_INFO[cardId];
-  if(!base) return null;
-  if(side === 'player' && playerElixir < base.cost) return null;
-  if(side === 'ai' && aiElixir < base.cost) return null;
-
-  // pick lane X if not provided
-  let laneX;
-  if (x === null) {
-    // choose lane based on side and alternating for AI
-    laneX = LANES_X[ side === 'player' ? 0 : aiLaneToggle % 2 ];
-  } else {
-    // snap to nearest lane
-    laneX = LANES_X.reduce((p,c)=> Math.abs(c - x) < Math.abs(p - x) ? c : p, LANES_X[0]);
-  }
-
-  // pick Y based on side (spawn near tower side)
-  if(y === null) {
-    y = side === 'player' ? (BASE_H - 150 + Math.random()*40-20) : (150 + Math.random()*40-20);
-  }
-
-  // ensure spawn not in river
-  if(isInRiver(y)) {
-    // snap to nearest safe Y (just below or above)
-    y = side === 'player' ? (RIVER_BOTTOM + 30) : (RIVER_TOP - 30);
-  }
-
-  const unit = {
-    id: base.id + '_' + Math.random().toString(36).slice(2,8),
-    base: base,
-    x: laneX,
-    y: y,
-    hp: base.hp,
-    hpMax: base.hp,
-    side: side,
-    lastAttack: 0,
-    target: null,
-    laneX: laneX
-  };
-
-  units.push(unit);
-  if(side === 'player') playerElixir -= base.cost;
-  else aiElixir -= base.cost;
-
-  if(side === 'ai') aiLaneToggle++;
-
-  return unit;
+function distance(a,b){return Math.hypot(a.x-b.x,a.y-b.y);}
+function drawHealthBar(x,y,cur,max){
+  ctx.fillStyle="red";ctx.fillRect(x-15,y-25,30,4);
+  ctx.fillStyle="lime";ctx.fillRect(x-15,y-25,30*(cur/max),4);
 }
 
-// card UI
-cardEls.forEach(el=>{
-  el.addEventListener('click', () => {
-    cardEls.forEach(c=> c.style.boxShadow = '');
-    el.style.boxShadow = '0 8px 20px rgba(255,255,0,0.7)';
-    selectedCardId = el.dataset.id;
+function spawnUnit(side, card){
+  const y=side==="player"?height-180:180;
+  const lane=Math.random()<0.5?"left":"right";
+  const x=lane==="left"?width/2-bridgeGap/2:width/2+bridgeGap/2;
+  units.push({
+    side,card,
+    x:x+(Math.random()*40-20),y:y+(Math.random()*20-10),
+    hp:card.hp,target:null,bridgeCrossed:false
   });
-});
-
-// click to place
-canvas.addEventListener('click', (ev)=>{
-  if(!selectedCardId) return;
-  const rect = canvas.getBoundingClientRect();
-  // compute logical coords from client coords
-  const scaleX = canvas.width / rect.width;
-  const scaleY = canvas.height / rect.height;
-  const x = (ev.clientX - rect.left) * scaleX;
-  const y = (ev.clientY - rect.top) * scaleY;
-  // player can only place in bottom half and not in river
-  if(y < BASE_H/2) return;
-  // snap x to nearest lane
-  const laneX = LANES_X.reduce((p,c)=> Math.abs(c - x) < Math.abs(p - x) ? c : p, LANES_X[0]);
-  // ensure placement not within river (snap to safe y)
-  const safeY = isInRiver(y) ? (RIVER_BOTTOM + 30) : y;
-  spawn('player', selectedCardId, laneX, safeY);
-});
-
-// AI logic: choose lane, respect cooldown, use elixir, moderate randomness
-function tryAISpawn(time) {
-  const nowMs = time;
-  if(nowMs - lastAiSpawn < AI_SPAWN_COOLDOWN_MS) return;
-  // AI will spawn only if aiElixir >= min cost and random chance
-  if(aiElixir < 2) return;
-  if(Math.random() < 0.015) {
-    // choose cards affordable
-    const affordable = Object.values(CARD_INFO).filter(c => c.cost <= aiElixir);
-    if(affordable.length === 0) return;
-    // pick by simple weighting (prefer lower cost slightly)
-    affordable.sort((a,b)=>a.cost - b.cost);
-    const pick = affordable[Math.floor(Math.random()*affordable.length)];
-    // choose lane that is less crowded on AI side
-    const laneIndex = (Math.random() < 0.5) ? 0 : 1;
-    spawn('ai', pick.id, LANES_X[laneIndex], 150 + Math.random()*40);
-    lastAiSpawn = nowMs;
-  }
 }
 
-// towers auto-target nearest enemy in range
-function towerActions(tower, side, dt) {
-  if(tower.cooldown > 0) tower.cooldown -= dt;
-  // find nearest enemy in range
-  let nearest = null, dmin = Infinity;
-  for(const u of units) {
-    if(u.side === side) continue;
-    const d = Math.hypot(u.x - tower.x, u.y - tower.y);
-    if(d < dmin && d <= TOWER_RANGE) { dmin = d; nearest = u; }
-  }
-  if(nearest && tower.cooldown <= 0) {
-    tower.cooldown = 800; // ms between tower shots
-    nearest.hp -= TOWER_DMG;
-    if(nearest.hp <= 0) {
-      // remove it
-      units = units.filter(x => x !== nearest);
-    }
-  }
+function updateElixir(dt){
+  if(Date.now()-lastSpawn>elixirRate && elixir<10){elixir++;lastSpawn=Date.now();}
+  if(Date.now()-aiLastSpawn>elixirRate && aiElixir<10){aiElixir++;aiLastSpawn=Date.now();}
+  elixirFill.style.width=(elixir/10*100)+"%";
 }
 
-// Unit logic: target enemies in lane first, else move to enemy tower (giant ignores troops)
-function updateUnitsLogic(dt, timeNow) {
-  // dt in ms
-  for(const u of units) {
-    // skip dead
-    if(u.hp <= 0) continue;
-
-    // choose target
-    if(u.base.id === 'giant') {
-      // giant => always target enemy tower
-      u.target = (u.side === 'player') ? towers.ai : towers.player;
-    } else {
-      // find nearest enemy within detection (prefer same lane)
-      let candidates = units.filter(x => x.side !== u.side);
-      // prefer those roughly on same laneX (within 80px)
-      candidates.sort((a,b) => (Math.abs(a.laneX - u.laneX) - Math.abs(b.laneX - u.laneX)) || (Math.hypot(a.x-u.x,a.y-u.y)-Math.hypot(b.x-u.x,b.y-u.y)));
-      let chosen = null;
-      for(const c of candidates) {
-        if(Math.hypot(c.x - u.x, c.y - u.y) <= Math.max(u.base.range, 600)) { chosen = c; break; }
+function updateUnits(dt){
+  for(let u of units){
+    const enemies=units.filter(e=>e.side!==u.side);
+    let tower=u.side==="player"?towers.ai:towers.player;
+    
+    // Pathfinding - handle river logic
+    if(!u.bridgeCrossed){
+      if(u.side==="player" && u.y>riverY-40) u.y-=u.card.speed;
+      else if(u.side==="ai" && u.y<riverY+40) u.y+=u.card.speed;
+      if(Math.abs(u.y-riverY)<=40){
+        if(Math.abs(u.x-width/2)<=bridgeGap/2+bridgeWidth/2){
+          u.bridgeCrossed=true;
+        } else {
+          // move toward nearest bridge
+          u.x += u.x<width/2?0.5:-0.5;
+        }
       }
-      // tower as fallback if no units near
-      const enemyTower = (u.side === 'player') ? towers.ai : towers.player;
-      if(!chosen && Math.hypot(enemyTower.x - u.x, enemyTower.y - u.y) <= 1000) {
-        chosen = enemyTower;
-      }
-      u.target = chosen;
+      continue;
     }
 
-    // act on target
-    if(u.target) {
-      const tx = u.target.x, ty = u.target.y;
-      const dx = tx - u.x, dy = ty - u.y;
-      const d = Math.hypot(dx,dy);
-      // if target is tower or troop and in range, attack (respect cooldown)
-      if(d <= u.base.range) {
-        if(timeNow - u.lastAttack > ATTACK_COOLDOWN) {
-          u.lastAttack = timeNow;
-          // damage application scaled
-          u.target.hp -= u.base.dmg;
-          if(u.target.hp <= 0) {
-            if(u.target.isTower) u.target.hp = 0;
-            else units = units.filter(x => x !== u.target);
-          }
-        }
-      } else {
-        // movement: move toward target but constrained to laneX until crossing bridge
-        // compute normalized movement
-        const nx = dx / d, ny = dy / d;
-        // propose next position
-        const step = u.base.speed * (dt / 16); // dt normalized
-        let nextX = u.x + nx * step;
-        let nextY = u.y + ny * step;
-
-        // lane constraint:
-        // troops stay at laneX except when crossing bridge: when strict laneX, allow only y change except inside bridge x-range
-        // If moving towards tower along same lane, set x to laneX unless inside bridge
-        const laneX = u.laneX;
-        const inBridge = insideBridgeX(laneX);
-        // We allow them to move horizontally only if inside bridge or when approaching tower's x (if target tower)
-        if(!insideBridgeX(u.x) && !insideBridgeX(nextX)) {
-          // restrict x to laneX (snap)
-          nextX = laneX;
-        }
-        // prevent entering river unless insideBridgeX(nextX)
-        if(nextY > RIVER_TOP && nextY < RIVER_BOTTOM && !insideBridgeX(nextX)) {
-          // snap y to just before river depending on side
-          nextY = (u.side === 'player') ? (RIVER_BOTTOM + 20) : (RIVER_TOP - 20);
-        }
-        u.x = nextX; u.y = nextY;
-      }
+    // Targeting logic
+    let closest=null,dist=Infinity;
+    for(let e of enemies){
+      const d=distance(u,e);
+      if(d<dist){dist=d;closest=e;}
+    }
+    if(!closest||dist>u.card.range){
+      const dTower=distance(u,tower);
+      if(u.card.target==="tower"||!closest||dTower<dist) u.target=tower;
+      else u.target=closest;
+    } else u.target=closest;
+    
+    // Movement
+    if(u.target && !u.target.isTower){
+      const dx=u.target.x-u.x, dy=u.target.y-u.y, d=Math.hypot(dx,dy);
+      if(d>u.card.range){u.x+=dx/d*u.card.speed;u.y+=dy/d*u.card.speed;}
+      else u.target.hp-=u.card.damage*dt/1000;
+    } else if(u.target && u.target.isTower){
+      const dx=u.target.x-u.x, dy=u.target.y-u.y, d=Math.hypot(dx,dy);
+      if(d>u.card.range){u.x+=dx/d*u.card.speed;u.y+=dy/d*u.card.speed;}
+      else u.target.hp-=u.card.damage*dt/1000;
     }
   }
+  // Remove dead
+  for(let i=units.length-1;i>=0;i--) if(units[i].hp<=0) units.splice(i,1);
 }
 
-// draw helpers
-function drawArena() {
-  // background already via CSS canvas background; draw river and bridges
-  // river
-  ctx.fillStyle = '#4DA6FF';
-  ctx.fillRect(0, RIVER_TOP, BASE_W, RIVER_BOTTOM - RIVER_TOP);
-  // bridges
-  ctx.fillStyle = '#8B4513';
-  for(const b of BRIDGES) ctx.fillRect(b.x, RIVER_TOP, b.w, RIVER_BOTTOM - RIVER_TOP);
-}
-
-function drawTower(t) {
-  // circle tower
-  ctx.save();
-  ctx.fillStyle = '#333';
-  ctx.beginPath();
-  ctx.arc(t.x, t.y, 36, 0, Math.PI*2);
-  ctx.fill();
-  ctx.fillStyle = '#fff';
-  ctx.font = '16px Arial';
-  ctx.textAlign = 'center';
-  ctx.fillText(t === towers.player ? 'PLAYER' : 'AI', t.x, t.y+6);
-  // health bar
-  const barW = 120, barH = 10;
-  const hx = t.x - barW/2, hy = (t === towers.player ? t.y - 60 : t.y + 40);
-  ctx.fillStyle = '#8f1d1d'; ctx.fillRect(hx, hy, barW, barH);
-  ctx.fillStyle = '#26a65b'; ctx.fillRect(hx, hy, barW * clamp(t.hp / TOWER_HP, 0, 1), barH);
-  ctx.strokeStyle = '#222'; ctx.strokeRect(hx, hy, barW, barH);
-  ctx.restore();
-}
-
-function drawUnit(u) {
-  ctx.save();
-  // shape
-  ctx.fillStyle = (u.side === 'player') ? u.base.color : '#e23b3b';
-  if(u.base.shape === 'circle') {
-    ctx.beginPath(); ctx.arc(u.x, u.y, 12, 0, Math.PI*2); ctx.fill();
-  } else if(u.base.shape === 'square') {
-    ctx.fillRect(u.x - 12, u.y - 12, 24, 24);
-  } else if(u.base.shape === 'triangle') {
-    ctx.beginPath(); ctx.moveTo(u.x, u.y - 14); ctx.lineTo(u.x - 12, u.y + 10); ctx.lineTo(u.x + 12, u.y + 10); ctx.closePath(); ctx.fill();
-  } else { // diamond
-    ctx.translate(u.x, u.y); ctx.rotate(Math.PI/4); ctx.fillRect(-10,-10,20,20); ctx.rotate(-Math.PI/4); ctx.translate(-u.x,-u.y);
+function draw(){
+  ctx.clearRect(0,0,width,height);
+  // Draw river
+  ctx.fillStyle="#3fa63f";
+  ctx.fillRect(0,0,width,riverY-40);
+  ctx.fillRect(0,riverY+40,width,height);
+  ctx.fillStyle="#3b75ff";
+  ctx.fillRect(0,riverY-40,width,80);
+  // Bridges
+  ctx.fillStyle="#8b4513";
+  ctx.fillRect(width/2-bridgeGap/2-bridgeWidth/2,riverY-40,bridgeWidth,80);
+  ctx.fillRect(width/2+bridgeGap/2-bridgeWidth/2,riverY-40,bridgeWidth,80);
+  
+  // Draw towers
+  for(let key in towers){
+    let t=towers[key];
+    ctx.fillStyle=key==="player"?"blue":"red";
+    ctx.beginPath();
+    ctx.arc(t.x,t.y,25,0,Math.PI*2);
+    ctx.fill();
+    drawHealthBar(t.x,t.y,t.hp,5000);
   }
-  // health bar (smooth)
-  const ratio = clamp(u.hp / u.hpMax, 0, 1);
-  ctx.fillStyle = '#8f1d1d'; ctx.fillRect(u.x - 16, u.y - 22, 32, 6);
-  ctx.fillStyle = '#2ecc71'; ctx.fillRect(u.x - 16, u.y - 22, 32 * ratio, 6);
-  ctx.strokeStyle = '#111'; ctx.strokeRect(u.x - 16, u.y - 22, 32, 6);
-  ctx.restore();
+  
+  // Draw units
+  for(let u of units){
+    ctx.fillStyle=u.card.color;
+    if(u.card.shape==="circle"){ctx.beginPath();ctx.arc(u.x,u.y,10,0,Math.PI*2);ctx.fill();}
+    if(u.card.shape==="square"){ctx.fillRect(u.x-10,u.y-10,20,20);}
+    if(u.card.shape==="triangle"){
+      ctx.beginPath();
+      ctx.moveTo(u.x,u.y-10);
+      ctx.lineTo(u.x-10,u.y+10);
+      ctx.lineTo(u.x+10,u.y+10);
+      ctx.closePath();ctx.fill();
+    }
+    drawHealthBar(u.x,u.y,u.hp,u.card.hp);
+  }
 }
 
-// main loop
-let lastTimeLoop = performance.now();
-function loop(t) {
-  const dt = t - lastTimeLoop; // ms
-  lastTimeLoop = t;
+function aiLogic(){
+  if(aiElixir>=3+Math.random()*3 && Math.random()<0.02){
+    const card=cards[Math.floor(Math.random()*cards.length)];
+    if(aiElixir>=card.cost){spawnUnit("ai",card);aiElixir-=card.cost;}
+  }
+}
 
-  // regen elixir by time
-  const dtSec = dt / 1000;
-  // accumulate fractional elixir properly
-  playerElixir = clamp(playerElixir + ELIXIR_REGEN_PER_SEC * dtSec, 0, ELIXIR_MAX);
-  aiElixir = clamp(aiElixir + ELIXIR_REGEN_PER_SEC * dtSec, 0, ELIXIR_MAX);
-
-  // AI spawn attempt
-  tryAISpawn(t);
-
-  // tower auto actions (cooldown based)
-  towerActions(towers.player, 'ai', dt);
-  towerActions(towers.ai, 'player', dt);
-
-  // update units
-  updateUnitsLogic(dt, t);
-
-  // clear & draw
-  ctx.clearRect(0,0,BASE_W, BASE_H);
-  // arena background - grass is CSS background, draw bridges and river
-  drawArena();
-  // draw towers
-  drawTower(towers.ai);
-  drawTower(towers.player);
-
-  // draw lane indicators faintly
-  ctx.globalAlpha = 0.06;
-  for(const lx of LANES_X) { ctx.fillStyle = '#000'; ctx.fillRect(lx-2,0,4,BASE_H); }
-  ctx.globalAlpha = 1;
-
-  // draw units
-  for(const u of units) drawUnit(u);
-
-  // update UI DOM
-  elixirDisplay.textContent = 'Elixir: ' + Math.floor(playerElixir);
-  aiHPdisplay.textContent = Math.max(0, Math.floor(towers.ai.hp));
-  playerHPdisplay.textContent = Math.max(0, Math.floor(towers.player.hp));
-
-  // remove dead units if any left (may have been dropped by attacks)
-  units = units.filter(u => u.hp > 0);
-
+let lastTime=performance.now();
+function loop(t){
+  const dt=t-lastTime;lastTime=t;
+  updateElixir(dt);
+  aiLogic();
+  updateUnits(dt);
+  draw();
+  playerHP.textContent=towers.player.hp;
+  aiHP.textContent=towers.ai.hp;
   requestAnimationFrame(loop);
 }
-
-// small helper to let AI spawn with cooldown + elixir checks
-function tryAISpawn(timeNow) {
-  // want minimum spacing; lastAiSpawn expressed in ms global variable lastAiSpawn
-  if(timeNow - lastAiSpawn < AI_SPAWN_COOLDOWN_MS) return;
-  // require some randomness to avoid deterministic spam
-  if(Math.random() > 0.015) return;
-  // pick affordable units
-  const affordable = Object.values(CARD_INFO).filter(c => c.cost <= Math.floor(aiElixir));
-  if(affordable.length === 0) return;
-  // choose index by lane balancing (choose lane with fewer ai units)
-  const leftCount = units.filter(u => u.side==='ai' && Math.abs(u.laneX - LANES_X[0]) < 20).length;
-  const rightCount = units.filter(u => u.side==='ai' && Math.abs(u.laneX - LANES_X[1]) < 20).length;
-  const laneIndex = leftCount <= rightCount ? 0 : 1;
-  const chosen = affordable[Math.floor(Math.random()*affordable.length)];
-  spawn('ai', chosen.id, LANES_X[laneIndex], 150 + Math.random()*40);
-  lastAiSpawn = timeNow;
-}
-
-// start with a few units on both sides for immediate action
-spawn('ai', 'archer', LANES_X[0], 160);
-spawn('ai', 'knight', LANES_X[1], 140);
-spawn('player', 'knight', LANES_X[0], BASE_H - 160);
-spawn('player', 'archer', LANES_X[1], BASE_H - 140);
-
 requestAnimationFrame(loop);
 
+canvas.addEventListener("click",()=>{
+  const card=cards[Math.floor(Math.random()*cards.length)];
+  if(elixir>=card.cost){spawnUnit("player",card);elixir-=card.cost;}
+});
 </script>
 </body>
 </html>
