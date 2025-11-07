@@ -3,49 +3,36 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Mini Clash Royale</title>
+<title>Mini Clash Royale Stable</title>
 <style>
 body { margin:0; background-color:#87CEEB; font-family:Arial,sans-serif; user-select:none; overflow:hidden; }
 #gameArea { position: relative; width: 400px; height: 800px; margin: auto; background-color: #7CFC00; border:2px solid #000; }
 
-.tower, .unit {
-  position: absolute;
-  display:flex;
-  justify-content:center;
-  align-items:center;
-  transition: transform 0.1s;
-}
-
-.hpBar {
-  position:absolute;
-  top:-8px;
-  left:0;
-  height:6px;
-  width:100%;
-  background-color:green;
-  border:1px solid #000;
-}
-
+.tower, .unit { position: absolute; display:flex; justify-content:center; align-items:center; }
+.hpBar { position:absolute; top:-8px; left:0; height:6px; width:100%; background-color:green; border:1px solid #000; }
 #elixirBar { position:absolute; bottom:0; left:50%; transform:translateX(-50%); font-weight:bold; font-size:16px; background: rgba(0,0,0,0.5); color:#fff; padding:5px 10px; border-radius:5px; }
 #cards { position:absolute; bottom:50px; left:50%; transform:translateX(-50%); display:flex; }
 .card { width:60px; height:60px; margin:5px; border:2px solid black; border-radius:5px; background-color:#fff; display:flex; justify-content:center; align-items:center; cursor:grab; font-weight:bold; }
 
-.shape-square { width:50px; height:50px; background:red; position:relative; }
-.shape-square .sword { position:absolute; width:30px; height:5px; background:silver; top:20px; left:20px; transform-origin:left center; }
+/* Shapes */
+.shape-square { width:50px; height:50px; background:red; }
 .shape-circle { width:50px; height:50px; background:blue; border-radius:50%; }
-.shape-triangle {
-  width: 0;
-  height: 0;
-  border-left:25px solid transparent;
-  border-right:25px solid transparent;
-  border-bottom:50px solid green;
-}
+.shape-triangle { width:0; height:0; border-left:25px solid transparent; border-right:25px solid transparent; border-bottom:50px solid green; }
 .shape-king-tower { width:60px; height:60px; background:black; }
 .shape-princess-tower { width:40px; height:40px; background:purple; }
+
+/* Water & Bridges */
+#river { position:absolute; top:350px; left:0; width:400px; height:100px; background-color:#1E90FF; }
+.bridge-left { position:absolute; top:350px; left:50px; width:80px; height:100px; background-color:#8B4513; }
+.bridge-right { position:absolute; top:350px; left:270px; width:80px; height:100px; background-color:#8B4513; }
 </style>
 </head>
 <body>
-<div id="gameArea"></div>
+<div id="gameArea">
+  <div id="river"></div>
+  <div class="bridge-left"></div>
+  <div class="bridge-right"></div>
+</div>
 <div id="elixirBar">Elixir: 10</div>
 <div id="cards"></div>
 
@@ -53,12 +40,9 @@ body { margin:0; background-color:#87CEEB; font-family:Arial,sans-serif; user-se
 // Constants
 const GAME_WIDTH = 400;
 const GAME_HEIGHT = 800;
-const BRIDGE_LEFT_X = 100;
-const BRIDGE_RIGHT_X = 300;
 const MAX_ELIXIR = 10;
 const ELIXIR_REGEN = 1;
-const AI_CHECK_INTERVAL = 500;
-const AI_PLAY_COOLDOWN = 2000;
+const BRIDGES = [{x:50,width:80},{x:270,width:80}];
 
 // Elements
 const gameArea = document.getElementById('gameArea');
@@ -70,7 +54,6 @@ let playerElixir = MAX_ELIXIR;
 let aiElixir = MAX_ELIXIR;
 let playerUnits = [];
 let aiUnits = [];
-let aiCooldown = 0;
 
 // Cards
 const cardsData = [
@@ -89,7 +72,7 @@ let towers = {
   aiRight: {x: GAME_WIDTH/2+60, y:100, hp:2000, type:'princess', element:null}
 };
 
-// Create tower elements
+// Create towers
 function createTower(tower){
   const div=document.createElement('div');
   div.className='tower '+(tower.type==='king'?'shape-king-tower':'shape-princess-tower');
@@ -104,15 +87,14 @@ function createTower(tower){
 for(const t in towers) createTower(towers[t]);
 
 // Create card buttons
-function createCardButton(card){
+cardsData.forEach(card=>{
   const div=document.createElement('div');
   div.className='card';
   div.innerText=card.name;
   div.draggable=true;
-  div.addEventListener('dragstart',(e)=>dragStart(e,card));
+  div.addEventListener('dragstart',e=>dragStart(e,card));
   cardsDiv.appendChild(div);
-}
-cardsData.forEach(createCardButton);
+});
 
 // Drag & Drop
 let draggingCard = null;
@@ -137,12 +119,6 @@ function spawnUnit(side,card,pos){
   };
   const div=document.createElement('div');
   div.className='unit shape-'+card.type;
-  if(card.type==='square'){
-    const sword=document.createElement('div');
-    sword.className='sword';
-    div.appendChild(sword);
-    unit.sword=sword;
-  }
   const hp=document.createElement('div');
   hp.className='hpBar';
   div.appendChild(hp);
@@ -152,7 +128,7 @@ function spawnUnit(side,card,pos){
   else aiUnits.push(unit), aiElixir-=card.cost;
 }
 
-// Elixir bar
+// Elixir
 function updateElixir(){elixirBar.innerText=`Elixir: ${playerElixir}`;}
 
 // Distance
@@ -160,22 +136,12 @@ function distance(a,b){return Math.hypot(a.x-b.x,a.y-b.y);}
 
 // Find target
 function findTarget(unit,enemyUnits,enemyTowers){
-  if(unit.card.type==='triangle'){ // Giant goes only to king tower
-    return unit.side==='player'?towers.aiKing:towers.playerKing;
-  }
   let closest=null,dist=Infinity;
-  enemyUnits.forEach(u=>{
-    const d=distance(unit,u);
-    if(d<dist){closest=u; dist=d;}
-  });
+  enemyUnits.forEach(u=>{const d=distance(unit,u); if(d<dist){closest=u; dist=d;}});
   if(closest) return closest;
-  // Target nearest tower
-  const towerList=unit.side==='player'?[towers.aiLeft,towers.aiRight,towers.aiKing]:[towers.playerLeft,towers.playerRight,towers.playerKing];
+  const towerList=unit.side==='player'?Object.values(towers).filter(t=>t.y<400):Object.values(towers).filter(t=>t.y>400);
   let closestTower=null,distTower=Infinity;
-  towerList.forEach(t=>{
-    const d=distance(unit,t);
-    if(d<distTower){closestTower=t; distTower=d;}
-  });
+  towerList.forEach(t=>{const d=distance(unit,t); if(d<distTower){closestTower=t; distTower=d;}});
   return closestTower;
 }
 
@@ -191,17 +157,8 @@ function updateUnits(units,enemyUnits,enemyTowers){
         const maxHP=(target.type==='king')?5000:2000;
         target.element.querySelector('.hpBar').style.width=(target.hp/maxHP*100)+'%';
       }
-      // Knight sword swing
-      if(u.card.type==='square' && u.sword){
-        u.sword.style.transform='rotate(45deg)';
-        setTimeout(()=>{if(u.sword) u.sword.style.transform='rotate(0deg)';},150);
-      }
-      // Giant shake
-      if(u.card.type==='triangle'){
-        u.element.style.transform='translateX(3px)';
-        setTimeout(()=>{u.element.style.transform='translateX(0)';},100);
-      }
     } else {
+      // Move toward target
       const dx=target.x-u.x, dy=target.y-u.y, d=Math.hypot(dx,dy);
       u.x+=dx/d*u.card.speed;
       u.y+=dy/d*u.card.speed;
@@ -212,26 +169,22 @@ function updateUnits(units,enemyUnits,enemyTowers){
   for(let i=units.length-1;i>=0;i--) if(units[i].hp<=0) units.splice(i,1);
 }
 
-// Smarter AI play
-function aiPlay() {
-    const now = Date.now();
-    if(aiElixir < 3 || now < aiCooldown) return;
-    const affordable = cardsData.filter(c => c.cost <= aiElixir);
-    if(affordable.length === 0) return;
-    const card = affordable[Math.floor(Math.random() * affordable.length)];
-    const bridgeX = Math.random() < 0.5 ? BRIDGE_LEFT_X : BRIDGE_RIGHT_X;
-    const y = 100;
-    spawnUnit('ai', card, { x: bridgeX, y });
-    aiCooldown = now + AI_PLAY_COOLDOWN;
-}
+// AI
+setInterval(()=>{
+  if(aiElixir>=3){
+    const card=cardsData[Math.floor(Math.random()*cardsData.length)];
+    const bridge=BRIDGES[Math.floor(Math.random()*BRIDGES.length)];
+    spawnUnit('ai',card,{x:bridge.x+bridge.width/2,y:100});
+    aiElixir-=card.cost;
+  }
+},2000);
 
-// Intervals
+// Elixir regen
 setInterval(()=>{
   playerElixir=Math.min(playerElixir+1,MAX_ELIXIR);
   aiElixir=Math.min(aiElixir+1,MAX_ELIXIR);
   updateElixir();
 },2800);
-setInterval(aiPlay, AI_CHECK_INTERVAL);
 
 // Game loop
 function gameLoop(){
