@@ -5,9 +5,47 @@
   <title>Mini Clash Royale React</title>
   <style>
     body { text-align:center; font-family: Arial; }
-    #root { position: relative; width: 800px; height: 400px; margin: auto; background: #87ceeb; border: 2px solid black; }
-    .card-container { position: absolute; bottom: 10px; left: 0; right: 0; display: flex; justify-content: center; }
-    .card-container img { margin: 5px; width: 60px; height: 60px; cursor: grab; }
+    #root {
+      position: relative;
+      width: 800px;
+      height: 400px;
+      margin: auto;
+      background: linear-gradient(#87ceeb, #add8e6); /* sky */
+      border: 2px solid black;
+      overflow: hidden;
+    }
+    .card-container {
+      position: absolute;
+      bottom: 10px;
+      left: 0;
+      right: 0;
+      display: flex;
+      justify-content: center;
+    }
+    .card-container img {
+      margin: 5px;
+      width: 60px;
+      height: 60px;
+      cursor: grab;
+      border: 2px solid #333;
+      border-radius: 5px;
+      background: #fff;
+    }
+    .tower {
+      position: absolute;
+      width: 80px;
+      height: 120px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: bold;
+      font-size: 18px;
+      user-select: none;
+    }
+    .player-tower { background-color: #4a90e2; left: 20px; bottom: 0; }
+    .opponent-tower { background-color: #e24a4a; right: 20px; top: 0; }
   </style>
 </head>
 <body>
@@ -19,7 +57,7 @@
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
   <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
 
-  <!-- Your game script -->
+  <!-- Game script -->
   <script type="text/babel" src="script.js"></script>
 </body>
 </html>
