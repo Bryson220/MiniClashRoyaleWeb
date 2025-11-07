@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Mini Clash Royale - Shapes & Ranges</title>
+<title>Mini Clash Royale - Lane Targeting</title>
 <style>
   body { margin:0; overflow:hidden; font-family:sans-serif; }
   #game { position:relative; width:1200px; height:600px; margin:auto; background:#87ceeb; }
@@ -97,7 +97,7 @@ gameDiv.addEventListener("drop", e=>{
   const rect=gameDiv.getBoundingClientRect();
   const x=e.clientX-rect.left-20;
   const y=e.clientY-rect.top-20;
-  if(y<MAP_HEIGHT/2) return;
+  if(y<MAP_HEIGHT/2) return; // can't place on opponent side
   spawnUnit("player", card, x, y, assignLane("player"));
   playerElixir-=card.cost;
   updateElixir();
@@ -181,35 +181,41 @@ function gameLoop(){
     units.forEach(unit=>{
       if(unit.hp<=0) return;
 
-      // Closest enemy in range
-      let closest=null;
-      let distClosest=Infinity;
-      enemies.forEach(e=>{
-        const d=distance(unit,e);
-        if(d<=unit.card.range && d<distClosest){distClosest=d; closest=e;}
-      });
+      // ------------------- Targeting -------------------
+      if(unit.card.id!=="giant"){
+        // Find closest enemy in range first
+        let closest=null;
+        let distClosest=Infinity;
+        enemies.forEach(e=>{
+          const d=distance(unit,e);
+          if(d<=unit.card.range && d<distClosest){distClosest=d; closest=e;}
+        });
+        // Tower check
+        const dTower=distance(unit,enemyTower);
+        if(dTower<=unit.card.range && dTower<distClosest) closest={x:enemyTower.x,y:enemyTower.y,isTower:true};
 
-      // Tower check
-      const dTower=distance(unit,enemyTower);
-      if(dTower<=unit.card.range && dTower<distClosest) closest={x:enemyTower.x,y:enemyTower.y,isTower:true};
+        unit.target=closest;
+      } else {
+        unit.target={x:enemyTower.x,y:enemyTower.y,isTower:true}; // Giants ignore units
+      }
 
-      unit.target=closest;
-
-      if(closest){
-        const dx=closest.x-unit.x;
-        const dy=closest.y-unit.y;
+      // ------------------- Actions -------------------
+      if(unit.target){
+        const dx=unit.target.x-unit.x;
+        const dy=unit.target.y-unit.y;
         const dist=Math.hypot(dx,dy);
-        if(now-unit.lastAttack>ATTACK_COOLDOWN){
+        if(now-unit.lastAttack>ATTACK_COOLDOWN && dist<=unit.card.range){
           unit.lastAttack=now;
-          if(closest.isTower){
+          if(unit.target.isTower){
             if(isPlayer) towers.ai.hp-=unit.card.dmg;
             else towers.player.hp-=unit.card.dmg;
-          } else closest.hp-=unit.card.dmg;
+          } else unit.target.hp-=unit.card.dmg;
+        } else if(dist>unit.card.range){
+          const normX=dx/dist;
+          const normY=dy/dist;
+          unit.x+=normX*unit.card.speed*2;
+          unit.y+=normY*unit.card.speed*2;
         }
-      } else {
-        // Move along lane
-        const dirX=isPlayer?1:-1;
-        unit.x+=dirX*unit.card.speed*2;
       }
 
       // Update visuals
@@ -231,8 +237,8 @@ function gameLoop(){
   updateUnits(playerUnits, aiUnits, towers.ai, true);
   updateUnits(aiUnits, playerUnits, towers.player, false);
 
-  playerTowerDiv.textContent=Math.max(0,towers.player.hp);
-  aiTowerDiv.textContent=Math.max(0,towers.ai.hp);
+  playerTowerDiv.textContent=Math.max(0,Math.floor(towers.player.hp));
+  aiTowerDiv.textContent=Math.max(0,Math.floor(towers.ai.hp));
 
   requestAnimationFrame(gameLoop);
 }
