@@ -21,7 +21,6 @@ const CARD_DATA = [
 
 function clamp(value, min, max) { return Math.min(Math.max(value, min), max); }
 function distance(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
-
 function useInterval(callback, delay) {
   const saved = useRef();
   useEffect(() => { saved.current = callback; }, [callback]);
@@ -69,10 +68,10 @@ function App() {
   const fieldRef = useRef();
   const opponentElixirRef = useRef(ELIXIR_MAX);
 
-  const towers = {
+  const [towers, setTowers] = useState({
     player: { x: 50, y: MAP_HEIGHT/2-TOWER_HEIGHT/2, hp: 500 },
     ai: { x: MAP_WIDTH-50-TOWER_WIDTH, y: MAP_HEIGHT/2-TOWER_HEIGHT/2, hp: 500 }
-  };
+  });
 
   // Elixir regen
   useInterval(()=>setPlayerElixir(e=>clamp(e+ELIXIR_REGEN,0,ELIXIR_MAX)),1000);
@@ -88,27 +87,33 @@ function App() {
     }
   },1500);
 
-  // Spawn a unit
   function spawnUnit(side, card, pos=null){
-    const yBase = side==="player" ? MAP_HEIGHT-150 : 50;
+    const yBase = pos ? pos.y : side==="player" ? MAP_HEIGHT-150 : 50;
     const xBase = pos ? pos.x : side==="player" ? 150 : MAP_WIDTH-150;
     const newUnit = { id:Math.random().toString(36).substr(2,9), card, hp:card.hp, pos:{x:xBase,y:yBase}, side, lastAttack:0 };
     if(side==="player") setPlayerUnits(u=>[...u,newUnit]);
     else setAiUnits(u=>[...u,newUnit]);
   }
 
-  // Drag & drop
-  function onDragStart(e, card){ if(playerElixir<card.cost) e.preventDefault(); else setDraggingCard(card); }
+  function onDragStart(e, card){
+    if(playerElixir < card.cost) { e.preventDefault(); return; }
+    setDraggingCard(card);
+  }
+
   function onDrop(e){
     e.preventDefault();
     if(!draggingCard) return;
     const rect = fieldRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    if(y<MAP_HEIGHT/2) { setDraggingCard(null); return; }
-    if(playerElixir >= draggingCard.cost){ spawnUnit("player", draggingCard, {x,y}); setPlayerElixir(e=>e-draggingCard.cost); }
+    const x = e.clientX - rect.left - CARD_SIZE/2;
+    const y = e.clientY - rect.top - CARD_SIZE/2;
+    if(y < MAP_HEIGHT/2) { setDraggingCard(null); return; }
+    if(playerElixir >= draggingCard.cost){
+      spawnUnit("player", draggingCard, {x,y});
+      setPlayerElixir(e=>e - draggingCard.cost);
+    }
     setDraggingCard(null);
   }
+
   function onDragOver(e){ e.preventDefault(); }
 
   // Game loop: movement + attacks
@@ -121,26 +126,20 @@ function App() {
         if(u.hp<=0) return null;
         let target=null;
         let closestDist = Infinity;
-
-        // Find closest AI unit
         for(const enemy of aiUnits){
           const dist = distance(u.pos, enemy.pos);
           if(dist<closestDist){ closestDist=dist; target=enemy; }
         }
-        // Check AI tower
         const towerDist = distance(u.pos, {x:towers.ai.x+TOWER_WIDTH/2, y:towers.ai.y+TOWER_HEIGHT/2});
         if(towerDist<closestDist){ closestDist=towerDist; target={...towers.ai, isTower:true}; }
-
-        // Attack if in range
         if(target && closestDist <= u.card.range){
           if(now - u.lastAttack > ATTACK_COOLDOWN){
             u.lastAttack = now;
-            if(target.isTower) towers.ai.hp = Math.max(towers.ai.hp - u.card.dmg,0);
+            if(target.isTower) setTowers(t=>({...t, ai:{...t.ai, hp:Math.max(t.ai.hp - u.card.dmg,0)}}));
             else target.hp = Math.max(target.hp - u.card.dmg,0);
           }
           return u;
         } else {
-          // Move toward target
           const dx = towers.ai.x - u.pos.x;
           const dy = towers.ai.y - u.pos.y;
           const dist = Math.hypot(dx,dy);
@@ -156,18 +155,16 @@ function App() {
         if(u.hp<=0) return null;
         let target=null;
         let closestDist = Infinity;
-
         for(const enemy of playerUnits){
           const dist = distance(u.pos, enemy.pos);
           if(dist<closestDist){ closestDist=dist; target=enemy; }
         }
         const towerDist = distance(u.pos, {x:towers.player.x+TOWER_WIDTH/2, y:towers.player.y+TOWER_HEIGHT/2});
         if(towerDist<closestDist){ closestDist=towerDist; target={...towers.player, isTower:true}; }
-
         if(target && closestDist <= u.card.range){
           if(now - u.lastAttack > ATTACK_COOLDOWN){
             u.lastAttack = now;
-            if(target.isTower) towers.player.hp = Math.max(towers.player.hp - u.card.dmg,0);
+            if(target.isTower) setTowers(t=>({...t, player:{...t.player, hp:Math.max(t.player.hp - u.card.dmg,0)}}));
             else target.hp = Math.max(target.hp - u.card.dmg,0);
           }
           return u;
@@ -184,9 +181,8 @@ function App() {
   }, 100);
 
   return (
-    <div ref={fieldRef} style={{position:"relative", width:MAP_WIDTH, height:MAP_HEIGHT, margin:"auto", background:"#87ceeb"}} 
+    <div ref={fieldRef} style={{position:"relative", width:MAP_WIDTH, height:MAP_HEIGHT, margin:"auto", background:"#87ceeb"}}
          onDrop={onDrop} onDragOver={onDragOver}>
-      {/* river */}
       <div style={{position:"absolute", top:MAP_HEIGHT/2-25, left:0, width:MAP_WIDTH, height:50, background:"#00bfff"}}></div>
       <Tower {...towers.player} side="player"/>
       <Tower {...towers.ai} side="ai"/>
