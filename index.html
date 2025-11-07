@@ -5,72 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Mini Clash Royale</title>
 <style>
-body {
-  margin: 0;
-  background-color: #87CEEB;
-  font-family: Arial, sans-serif;
-  user-select: none;
-  overflow: hidden;
-}
-#gameArea {
-  position: relative;
-  width: 600px;
-  height: 800px;
-  margin: auto;
-  background-color: #7CFC00;
-  border: 2px solid #000;
-}
-.tower, .unit {
-  position: absolute;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-.tower img, .unit img {
-  width: 60px;
-  height: 60px;
-}
-.hpBar {
-  position: absolute;
-  top: -6px;
-  left: 0;
-  height: 6px;
-  width: 100%;
-  background-color: green;
-  border: 1px solid #000;
-}
-#elixirBar {
-  position: absolute;
-  bottom: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  font-weight: bold;
-  font-size: 16px;
-  background: rgba(0,0,0,0.5);
-  color: #fff;
-  padding: 5px 10px;
-  border-radius: 5px;
-}
-#cards {
-  position: absolute;
-  bottom: 50px;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-}
-.card {
-  width: 60px;
-  height: 60px;
-  margin: 5px;
-  border: 2px solid black;
-  border-radius: 5px;
-  background-color: #fff;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  cursor: grab;
-  font-weight: bold;
-}
+body { margin:0; background-color:#87CEEB; font-family:Arial, sans-serif; user-select:none; overflow:hidden; }
+#gameArea { position: relative; width: 600px; height: 800px; margin: auto; background-color: #7CFC00; border:2px solid #000; }
+.tower, .unit { position: absolute; display:flex; justify-content:center; align-items:center; }
+.tower img, .unit img { width:60px; height:60px; }
+.hpBar { position:absolute; top:-6px; left:0; height:6px; width:100%; background-color:green; border:1px solid #000; }
+#elixirBar { position:absolute; bottom:0; left:50%; transform:translateX(-50%); font-weight:bold; font-size:16px; background: rgba(0,0,0,0.5); color:#fff; padding:5px 10px; border-radius:5px; }
+#cards { position:absolute; bottom:50px; left:50%; transform:translateX(-50%); display:flex; }
+.card { width:60px; height:60px; margin:5px; border:2px solid black; border-radius:5px; background-color:#fff; display:flex; justify-content:center; align-items:center; cursor:grab; font-weight:bold; }
 </style>
 </head>
 <body>
@@ -99,21 +41,21 @@ let aiElixir = MAX_ELIXIR;
 let playerUnits = [];
 let aiUnits = [];
 
-// Cards data with placeholder images
+// Cards
 const cardsData = [
-  {name:'Knight', cost:3, hp:200, dmg:20, speed:1.2, range:30, type:'melee', img:'https://i.imgur.com/5X9X9X9.png'},
-  {name:'Archer', cost:3, hp:100, dmg:15, speed:1.5, range:80, type:'ranged', img:'https://i.imgur.com/3X9QZ9Q.png'},
-  {name:'Giant', cost:5, hp:500, dmg:30, speed:0.7, range:30, type:'giant', img:'https://i.imgur.com/7Q9Q9Q9.png'}
+  {name:'Knight', cost:3, hp:200, dmg:20, speed:1.2, range:30, type:'melee', img:'images/knight.png'},
+  {name:'Archer', cost:3, hp:100, dmg:15, speed:1.5, range:80, type:'ranged', img:'images/archer.png'},
+  {name:'Giant', cost:5, hp:500, dmg:30, speed:0.7, range:30, type:'giant', img:'images/giant.png'}
 ];
 
 // Towers
 let towers = {
-  playerKing: {x: GAME_WIDTH/2-30, y: GAME_HEIGHT-100, hp:5000, img:'https://i.imgur.com/king.png', element:null},
-  aiKing: {x: GAME_WIDTH/2-30, y: 20, hp:5000, img:'https://i.imgur.com/king.png', element:null},
-  playerLeft: {x: GAME_WIDTH/2-150, y: GAME_HEIGHT-160, hp:2000, img:'https://i.imgur.com/princess.png', element:null},
-  playerRight: {x: GAME_WIDTH/2+70, y: GAME_HEIGHT-160, hp:2000, img:'https://i.imgur.com/princess.png', element:null},
-  aiLeft: {x: GAME_WIDTH/2-150, y: 100, hp:2000, img:'https://i.imgur.com/princess.png', element:null},
-  aiRight: {x: GAME_WIDTH/2+70, y: 100, hp:2000, img:'https://i.imgur.com/princess.png', element:null}
+  playerKing: {x: GAME_WIDTH/2-30, y: GAME_HEIGHT-100, hp:5000, img:'images/king-tower.png', element:null},
+  aiKing: {x: GAME_WIDTH/2-30, y: 20, hp:5000, img:'images/king-tower.png', element:null},
+  playerLeft: {x: GAME_WIDTH/2-150, y: GAME_HEIGHT-160, hp:2000, img:'images/princess-tower.png', element:null},
+  playerRight: {x: GAME_WIDTH/2+70, y: GAME_HEIGHT-160, hp:2000, img:'images/princess-tower.png', element:null},
+  aiLeft: {x: GAME_WIDTH/2-150, y: 100, hp:2000, img:'images/princess-tower.png', element:null},
+  aiRight: {x: GAME_WIDTH/2+70, y: 100, hp:2000, img:'images/princess-tower.png', element:null}
 };
 
 // Create tower elements
@@ -137,7 +79,6 @@ for(const t in towers) createTower(towers[t]);
 function createCardButton(card){
   const div=document.createElement('div');
   div.className='card';
-  div.style.backgroundColor='#fff';
   const img=document.createElement('img');
   img.src=card.img;
   img.style.width='50px';
@@ -190,7 +131,7 @@ function updateElixir(){elixirBar.innerText=`Elixir: ${playerElixir}`;}
 // Distance
 function distance(a,b){return Math.hypot(a.x-b.x,a.y-b.y);}
 
-// Find target (smart)
+// Find target
 function findTarget(unit,enemyUnits,enemyTowers){
   if(unit.card.type==='giant'){
     return unit.side==='player'?towers.aiKing:towers.playerKing;
@@ -201,7 +142,6 @@ function findTarget(unit,enemyUnits,enemyTowers){
     if(d<dist){closest=u; dist=d;}
   });
   if(closest) return closest;
-  // Default tower target in lane
   return unit.side==='player'?towers.aiKing:towers.playerKing;
 }
 
@@ -228,7 +168,7 @@ function updateUnits(units,enemyUnits,enemyTowers){
   for(let i=units.length-1;i>=0;i--) if(units[i].hp<=0) units.splice(i,1);
 }
 
-// AI
+// AI play
 function aiPlay(){
   if(aiElixir>=3){
     const card=cardsData[Math.floor(Math.random()*cardsData.length)];
