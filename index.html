@@ -5,45 +5,23 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Clash Royale Lite</title>
 <style>
-  html, body {
-    margin: 0;
-    padding: 0;
-    background: #2c7a2c;
-    overflow: hidden;
-  }
-  canvas {
-    display: block;
-    margin: 0 auto;
-    background: linear-gradient(#3fa63f 40%, #2e8b57 50%, #3fa63f 60%);
-  }
-  #ui {
-    position: absolute;
-    top: 10px;
-    left: 50%;
-    transform: translateX(-50%);
-    color: white;
-    text-align: center;
-    font-family: sans-serif;
-  }
-  #elixirBar {
-    width: 300px;
-    height: 20px;
-    border: 2px solid white;
-    margin: 5px auto;
-    background: purple;
-  }
-  #elixirFill {
-    height: 100%;
-    background: violet;
-    width: 0%;
-  }
+html, body {margin:0; padding:0; background:#2c7a2c; overflow:hidden;}
+canvas {display:block; margin:0 auto; background:linear-gradient(#3fa63f 40%, #2e8b57 50%, #3fa63f 60%);}
+#ui {
+  position:absolute; top:10px; left:50%; transform:translateX(-50%);
+  color:white; text-align:center; font-family:sans-serif;
+}
+#elixirBar {width:300px; height:20px; border:2px solid white; margin:5px auto; background:purple;}
+#elixirFill {height:100%; background:violet; width:0%;}
+#elixirCount {margin-top:2px;}
 </style>
 </head>
 <body>
 <div id="ui">
   <h2>Clash Royale Lite</h2>
   <div id="elixirBar"><div id="elixirFill"></div></div>
-  <div>Player Tower HP: <span id="playerHP"></span> | AI Tower HP: <span id="aiHP"></span></div>
+  <div id="elixirCount">Elixir: 0</div>
+  <div>Player King HP: <span id="playerHP"></span> | AI King HP: <span id="aiHP"></span></div>
 </div>
 <canvas id="game" width="600" height="800"></canvas>
 
@@ -53,25 +31,51 @@ const ctx=canvas.getContext('2d');
 const width=canvas.width, height=canvas.height;
 const riverY=height/2;
 const bridgeWidth=80, bridgeGap=150;
-const towers={player:{x:width/2, y:height-100, hp:5000}, ai:{x:width/2, y:100, hp:5000}};
+
+const towers={
+  player:{
+    king:{x:width/2, y:height-100, hp:5000, isTower:true, type:"king", range:200, cooldown:0, active:false},
+    left:{x:width/2-120, y:height-220, hp:2000, isTower:true, type:"princess", range:180, cooldown:0},
+    right:{x:width/2+120, y:height-220, hp:2000, isTower:true, type:"princess", range:180, cooldown:0}
+  },
+  ai:{
+    king:{x:width/2, y:100, hp:5000, isTower:true, type:"king", range:200, cooldown:0, active:false},
+    left:{x:width/2-120, y:220, hp:2000, isTower:true, type:"princess", range:180, cooldown:0},
+    right:{x:width/2+120, y:220, hp:2000, isTower:true, type:"princess", range:180, cooldown:0}
+  }
+};
+
 const units=[];
+const projectiles=[];
 let elixir=5, aiElixir=5;
 const elixirFill=document.getElementById("elixirFill");
+const elixirCount=document.getElementById("elixirCount");
 const playerHP=document.getElementById("playerHP");
 const aiHP=document.getElementById("aiHP");
 let lastSpawn=0, aiLastSpawn=0;
-const elixirRate=2.8*1000; // 1 elixir every 2.8s
+const elixirRate=2800;
 
 const cards=[
-  {id:"knight",shape:"circle",color:"blue",speed:1.2,range:25,damage:50,hp:300,cost:3,target:"any"},
-  {id:"archer",shape:"triangle",color:"cyan",speed:1.0,range:100,damage:30,hp:150,cost:3,target:"any"},
-  {id:"giant",shape:"square",color:"orange",speed:0.8,range:30,damage:80,hp:500,cost:5,target:"tower"}
+  {id:"knight",shape:"circle",color:"blue",speed:1.2,range:25,damage:50,hp:300,cost:3,target:"any",type:"melee"},
+  {id:"archer",shape:"triangle",color:"cyan",speed:1.0,range:120,damage:35,hp:150,cost:3,target:"any",type:"ranged",attackSpeed:1000},
+  {id:"giant",shape:"square",color:"orange",speed:0.8,range:30,damage:80,hp:500,cost:5,target:"tower",type:"melee"}
 ];
 
 function distance(a,b){return Math.hypot(a.x-b.x,a.y-b.y);}
 function drawHealthBar(x,y,cur,max){
   ctx.fillStyle="red";ctx.fillRect(x-15,y-25,30,4);
   ctx.fillStyle="lime";ctx.fillRect(x-15,y-25,30*(cur/max),4);
+}
+function drawCrown(x,y){
+  ctx.fillStyle="gold";
+  ctx.beginPath();
+  ctx.moveTo(x-10,y-20);
+  ctx.lineTo(x-5,y-30);
+  ctx.lineTo(x,y-20);
+  ctx.lineTo(x+5,y-30);
+  ctx.lineTo(x+10,y-20);
+  ctx.closePath();
+  ctx.fill();
 }
 
 function spawnUnit(side, card){
@@ -81,7 +85,7 @@ function spawnUnit(side, card){
   units.push({
     side,card,
     x:x+(Math.random()*40-20),y:y+(Math.random()*20-10),
-    hp:card.hp,target:null,bridgeCrossed:false
+    hp:card.hp,target:null,bridgeCrossed:false,lastAttack:0
   });
 }
 
@@ -89,92 +93,129 @@ function updateElixir(dt){
   if(Date.now()-lastSpawn>elixirRate && elixir<10){elixir++;lastSpawn=Date.now();}
   if(Date.now()-aiLastSpawn>elixirRate && aiElixir<10){aiElixir++;aiLastSpawn=Date.now();}
   elixirFill.style.width=(elixir/10*100)+"%";
+  elixirCount.textContent="Elixir: "+elixir;
+}
+
+function spawnProjectile(x,y,target,damage,side,speed=4,color="yellow"){
+  projectiles.push({x,y,target,damage,side,speed,color});
 }
 
 function updateUnits(dt){
   for(let u of units){
     const enemies=units.filter(e=>e.side!==u.side);
-    let tower=u.side==="player"?towers.ai:towers.player;
-    
-    // Pathfinding - handle river logic
+    const towerSet=u.side==="player"?towers.ai:towers.player;
+    const allEnemyTowers=[towerSet.king,towerSet.left,towerSet.right];
+
     if(!u.bridgeCrossed){
       if(u.side==="player" && u.y>riverY-40) u.y-=u.card.speed;
       else if(u.side==="ai" && u.y<riverY+40) u.y+=u.card.speed;
       if(Math.abs(u.y-riverY)<=40){
-        if(Math.abs(u.x-width/2)<=bridgeGap/2+bridgeWidth/2){
-          u.bridgeCrossed=true;
-        } else {
-          // move toward nearest bridge
-          u.x += u.x<width/2?0.5:-0.5;
-        }
+        if(Math.abs(u.x-width/2)<=bridgeGap/2+bridgeWidth/2) u.bridgeCrossed=true;
+        else u.x += u.x<width/2?0.5:-0.5;
       }
       continue;
     }
 
-    // Targeting logic
     let closest=null,dist=Infinity;
     for(let e of enemies){
       const d=distance(u,e);
       if(d<dist){dist=d;closest=e;}
     }
-    if(!closest||dist>u.card.range){
-      const dTower=distance(u,tower);
-      if(u.card.target==="tower"||!closest||dTower<dist) u.target=tower;
-      else u.target=closest;
-    } else u.target=closest;
-    
-    // Movement
-    if(u.target && !u.target.isTower){
-      const dx=u.target.x-u.x, dy=u.target.y-u.y, d=Math.hypot(dx,dy);
-      if(d>u.card.range){u.x+=dx/d*u.card.speed;u.y+=dy/d*u.card.speed;}
-      else u.target.hp-=u.card.damage*dt/1000;
-    } else if(u.target && u.target.isTower){
-      const dx=u.target.x-u.x, dy=u.target.y-u.y, d=Math.hypot(dx,dy);
-      if(d>u.card.range){u.x+=dx/d*u.card.speed;u.y+=dy/d*u.card.speed;}
-      else u.target.hp-=u.card.damage*dt/1000;
+
+    let towerTarget=null, towerDist=Infinity;
+    for(let t of allEnemyTowers){
+      const d=distance(u,t);
+      if(d<towerDist){towerDist=d;towerTarget=t;}
+    }
+
+    if(u.card.id==="giant") u.target=towerTarget;
+    else {
+      if(closest && dist<=u.card.range) u.target=closest;
+      else u.target=towerTarget;
+    }
+
+    if(u.target){
+      const dx=u.target.x-u.x, dy=u.target.y-u.y;
+      const d=Math.hypot(dx,dy);
+      if(d>u.card.range){
+        u.x+=dx/d*u.card.speed;
+        u.y+=dy/d*u.card.speed;
+      } else {
+        if(u.card.type==="melee") u.target.hp-=u.card.damage*dt/1000;
+        else if(u.card.type==="ranged"){
+          if(Date.now()-u.lastAttack>u.card.attackSpeed){
+            spawnProjectile(u.x,u.y,u.target,u.card.damage,u.side,5,"cyan");
+            u.lastAttack=Date.now();
+          }
+        }
+      }
     }
   }
-  // Remove dead
+
   for(let i=units.length-1;i>=0;i--) if(units[i].hp<=0) units.splice(i,1);
+}
+
+function updateTowers(dt){
+  const allTowers=[...Object.values(towers.player),...Object.values(towers.ai)];
+  for(const side of ["player","ai"]){
+    const set=towers[side];
+    if((set.left.hp<=0 && set.right.hp<=0) && !set.king.active) set.king.active=true;
+  }
+
+  for(let t of allTowers){
+    if(t.hp<=0) continue;
+    if(t.type==="king" && !t.active) continue;
+
+    const enemies=units.filter(u=>u.side===(t.y<height/2?"player":"ai"));
+    let closest=null,dist=Infinity;
+    for(let e of enemies){
+      const d=distance(t,e);
+      if(d<t.range && d<dist){dist=d;closest=e;}
+    }
+    if(closest && Date.now()-t.cooldown>1000){
+      spawnProjectile(t.x,t.y,closest,(t.type==="king"?120:100),(t.y<height/2?"ai":"player"),6,"orange");
+      t.cooldown=Date.now();
+    }
+  }
+}
+
+function updateProjectiles(dt){
+  for(let p of projectiles){
+    const dx=p.target.x-p.x, dy=p.target.y-p.y;
+    const d=Math.hypot(dx,dy);
+    if(d<8){p.target.hp-=p.damage;p.remove=true;continue;}
+    p.x+=dx/d*p.speed; p.y+=dy/d*p.speed;
+  }
+  for(let i=projectiles.length-1;i>=0;i--) if(projectiles[i].remove||projectiles[i].y<0||projectiles[i].y>height) projectiles.splice(i,1);
 }
 
 function draw(){
   ctx.clearRect(0,0,width,height);
-  // Draw river
-  ctx.fillStyle="#3fa63f";
-  ctx.fillRect(0,0,width,riverY-40);
-  ctx.fillRect(0,riverY+40,width,height);
-  ctx.fillStyle="#3b75ff";
-  ctx.fillRect(0,riverY-40,width,80);
-  // Bridges
+  ctx.fillStyle="#3fa63f"; ctx.fillRect(0,0,width,riverY-40); ctx.fillRect(0,riverY+40,width,height);
+  ctx.fillStyle="#3b75ff"; ctx.fillRect(0,riverY-40,width,80);
   ctx.fillStyle="#8b4513";
   ctx.fillRect(width/2-bridgeGap/2-bridgeWidth/2,riverY-40,bridgeWidth,80);
   ctx.fillRect(width/2+bridgeGap/2-bridgeWidth/2,riverY-40,bridgeWidth,80);
-  
-  // Draw towers
-  for(let key in towers){
-    let t=towers[key];
-    ctx.fillStyle=key==="player"?"blue":"red";
-    ctx.beginPath();
-    ctx.arc(t.x,t.y,25,0,Math.PI*2);
-    ctx.fill();
-    drawHealthBar(t.x,t.y,t.hp,5000);
+
+  const allTowers=[...Object.values(towers.player),...Object.values(towers.ai)];
+  for(let t of allTowers){
+    ctx.fillStyle=(t.y>height/2)?"blue":"red";
+    if(t.type==="king"){ctx.beginPath();ctx.arc(t.x,t.y,25,0,Math.PI*2);ctx.fill();}
+    else {ctx.fillRect(t.x-20,t.y-20,40,40);}
+    if(t.type==="king" && t.active) drawCrown(t.x,t.y-40);
+    drawHealthBar(t.x,t.y,t.hp,(t.type==="king"?5000:2000));
   }
-  
-  // Draw units
+
   for(let u of units){
     ctx.fillStyle=u.card.color;
     if(u.card.shape==="circle"){ctx.beginPath();ctx.arc(u.x,u.y,10,0,Math.PI*2);ctx.fill();}
     if(u.card.shape==="square"){ctx.fillRect(u.x-10,u.y-10,20,20);}
-    if(u.card.shape==="triangle"){
-      ctx.beginPath();
-      ctx.moveTo(u.x,u.y-10);
-      ctx.lineTo(u.x-10,u.y+10);
-      ctx.lineTo(u.x+10,u.y+10);
-      ctx.closePath();ctx.fill();
-    }
+    if(u.card.shape==="triangle"){ctx.beginPath();ctx.moveTo(u.x,u.y-10);ctx.lineTo(u.x-10,u.y+10);ctx.lineTo(u.x+10,u.y+10);ctx.closePath();ctx.fill();}
     drawHealthBar(u.x,u.y,u.hp,u.card.hp);
   }
+
+  ctx.fillStyle="yellow";
+  for(let p of projectiles){ctx.beginPath();ctx.arc(p.x,p.y,3,0,Math.PI*2);ctx.fill();}
 }
 
 function aiLogic(){
@@ -186,13 +227,15 @@ function aiLogic(){
 
 let lastTime=performance.now();
 function loop(t){
-  const dt=t-lastTime;lastTime=t;
+  const dt=t-lastTime; lastTime=t;
   updateElixir(dt);
   aiLogic();
   updateUnits(dt);
+  updateTowers(dt);
+  updateProjectiles(dt);
   draw();
-  playerHP.textContent=towers.player.hp;
-  aiHP.textContent=towers.ai.hp;
+  playerHP.textContent=Math.round(towers.player.king.hp);
+  aiHP.textContent=Math.round(towers.ai.king.hp);
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
