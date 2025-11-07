@@ -14,6 +14,13 @@ canvas {display:block; margin:0 auto; background:linear-gradient(#3fa63f 40%, #2
 #elixirBar {width:300px; height:20px; border:2px solid white; margin:5px auto; background:purple;}
 #elixirFill {height:100%; background:violet; width:0%;}
 #elixirCount {margin-top:2px;}
+#cards {position:absolute; bottom:10px; left:50%; transform:translateX(-50%); display:flex;}
+.card {
+  width:60px; height:90px; margin:0 5px; border:2px solid white; border-radius:5px;
+  display:flex; justify-content:center; align-items:center; font-weight:bold;
+  cursor:grab; background:#444; color:white;
+  user-select:none;
+}
 </style>
 </head>
 <body>
@@ -23,30 +30,26 @@ canvas {display:block; margin:0 auto; background:linear-gradient(#3fa63f 40%, #2
   <div id="elixirCount">Elixir: 0</div>
   <div>Player King HP: <span id="playerHP"></span> | AI King HP: <span id="aiHP"></span></div>
 </div>
-<canvas id="game" width="600" height="800"></canvas>
+<div id="cards"></div>
+<canvas id="game" width="400" height="700"></canvas>
 
 <script>
 const canvas=document.getElementById('game');
 const ctx=canvas.getContext('2d');
 const width=canvas.width, height=canvas.height;
 const riverY=height/2;
-const bridgeWidth=80, bridgeGap=150;
+const bridgeWidth=60, bridgeGap=120;
 
 const towers={
-  player:{
-    king:{x:width/2, y:height-100, hp:5000, isTower:true, type:"king", range:200, cooldown:0, active:false},
-    left:{x:width/2-120, y:height-220, hp:2000, isTower:true, type:"princess", range:180, cooldown:0},
-    right:{x:width/2+120, y:height-220, hp:2000, isTower:true, type:"princess", range:180, cooldown:0}
-  },
-  ai:{
-    king:{x:width/2, y:100, hp:5000, isTower:true, type:"king", range:200, cooldown:0, active:false},
-    left:{x:width/2-120, y:220, hp:2000, isTower:true, type:"princess", range:180, cooldown:0},
-    right:{x:width/2+120, y:220, hp:2000, isTower:true, type:"princess", range:180, cooldown:0}
-  }
+  player:{king:{x:width/2,y:height-80,hp:5000,isTower:true,type:"king",range:150,cooldown:0,active:false},
+          left:{x:width/2-80,y:height-180,hp:2000,isTower:true,type:"princess",range:120,cooldown:0},
+          right:{x:width/2+80,y:height-180,hp:2000,isTower:true,type:"princess",range:120,cooldown:0}},
+  ai:{king:{x:width/2,y:80,hp:5000,isTower:true,type:"king",range:150,cooldown:0,active:false},
+      left:{x:width/2-80,y:180,hp:2000,isTower:true,type:"princess",range:120,cooldown:0},
+      right:{x:width/2+80,y:180,hp:2000,isTower:true,type:"princess",range:120,cooldown:0}}
 };
 
-const units=[];
-const projectiles=[];
+const units=[],projectiles=[];
 let elixir=5, aiElixir=5;
 const elixirFill=document.getElementById("elixirFill");
 const elixirCount=document.getElementById("elixirCount");
@@ -57,37 +60,43 @@ const elixirRate=2800;
 
 const cards=[
   {id:"knight",shape:"circle",color:"blue",speed:1.2,range:25,damage:50,hp:300,cost:3,target:"any",type:"melee"},
-  {id:"archer",shape:"triangle",color:"cyan",speed:1.0,range:120,damage:35,hp:150,cost:3,target:"any",type:"ranged",attackSpeed:1000},
-  {id:"giant",shape:"square",color:"orange",speed:0.8,range:30,damage:80,hp:500,cost:5,target:"tower",type:"melee"}
+  {id:"archer",shape:"triangle",color:"cyan",speed:1.0,range:100,damage:35,hp:150,cost:3,target:"any",type:"ranged",attackSpeed:1000},
+  {id:"giant",shape:"square",color:"orange",speed:0.8,range:25,damage:80,hp:500,cost:5,target:"tower",type:"melee"}
 ];
 
-function distance(a,b){return Math.hypot(a.x-b.x,a.y-b.y);}
-function drawHealthBar(x,y,cur,max){
-  ctx.fillStyle="red";ctx.fillRect(x-15,y-25,30,4);
-  ctx.fillStyle="lime";ctx.fillRect(x-15,y-25,30*(cur/max),4);
-}
-function drawCrown(x,y){
-  ctx.fillStyle="gold";
-  ctx.beginPath();
-  ctx.moveTo(x-10,y-20);
-  ctx.lineTo(x-5,y-30);
-  ctx.lineTo(x,y-20);
-  ctx.lineTo(x+5,y-30);
-  ctx.lineTo(x+10,y-20);
-  ctx.closePath();
-  ctx.fill();
+const cardContainer=document.getElementById("cards");
+let draggingCard=null;
+
+// Generate card UI
+cards.forEach(card=>{
+  const el=document.createElement("div");
+  el.className="card"; el.textContent=card.id;
+  el.draggable=true;
+  el.addEventListener("dragstart",e=>{if(elixir>=card.cost) draggingCard=card; else e.preventDefault();});
+  cardContainer.appendChild(el);
+});
+
+canvas.addEventListener("dragover",e=>e.preventDefault());
+canvas.addEventListener("drop",e=>{
+  if(!draggingCard) return;
+  const rect=canvas.getBoundingClientRect();
+  const x=e.clientX-rect.left;
+  const y=e.clientY-rect.top;
+  if(y<riverY) return; // can't place on AI side
+  spawnUnit("player",draggingCard,x,y);
+  elixir-=draggingCard.cost;
+  draggingCard=null;
+});
+
+function spawnUnit(side,card,x=null,y=null){
+  const posY=y!==null?y:(side==="player"?height-160:160);
+  const laneX=x!==null?x:(Math.random()<0.5?width/2-bridgeGap/2:width/2+bridgeGap/2);
+  units.push({side,card,x:laneX+(Math.random()*30-15),y:posY+(Math.random()*15-7),hp:card.hp,target:null,bridgeCrossed:false,lastAttack:0});
 }
 
-function spawnUnit(side, card){
-  const y=side==="player"?height-180:180;
-  const lane=Math.random()<0.5?"left":"right";
-  const x=lane==="left"?width/2-bridgeGap/2:width/2+bridgeGap/2;
-  units.push({
-    side,card,
-    x:x+(Math.random()*40-20),y:y+(Math.random()*20-10),
-    hp:card.hp,target:null,bridgeCrossed:false,lastAttack:0
-  });
-}
+function distance(a,b){return Math.hypot(a.x-b.x,a.y-b.y);}
+function drawHealthBar(x,y,cur,max){ctx.fillStyle="red";ctx.fillRect(x-15,y-25,30,4);ctx.fillStyle="lime";ctx.fillRect(x-15,y-25,30*(cur/max),4);}
+function drawCrown(x,y){ctx.fillStyle="gold";ctx.beginPath();ctx.moveTo(x-10,y-20);ctx.lineTo(x-5,y-30);ctx.lineTo(x,y-20);ctx.lineTo(x+5,y-30);ctx.lineTo(x+10,y-20);ctx.closePath();ctx.fill();}
 
 function updateElixir(dt){
   if(Date.now()-lastSpawn>elixirRate && elixir<10){elixir++;lastSpawn=Date.now();}
@@ -96,16 +105,13 @@ function updateElixir(dt){
   elixirCount.textContent="Elixir: "+elixir;
 }
 
-function spawnProjectile(x,y,target,damage,side,speed=4,color="yellow"){
-  projectiles.push({x,y,target,damage,side,speed,color});
-}
+function spawnProjectile(x,y,target,damage,side,speed=4,color="yellow"){projectiles.push({x,y,target,damage,side,speed,color});}
 
 function updateUnits(dt){
   for(let u of units){
     const enemies=units.filter(e=>e.side!==u.side);
     const towerSet=u.side==="player"?towers.ai:towers.player;
     const allEnemyTowers=[towerSet.king,towerSet.left,towerSet.right];
-
     if(!u.bridgeCrossed){
       if(u.side==="player" && u.y>riverY-40) u.y-=u.card.speed;
       else if(u.side==="ai" && u.y<riverY+40) u.y+=u.card.speed;
@@ -115,43 +121,23 @@ function updateUnits(dt){
       }
       continue;
     }
-
     let closest=null,dist=Infinity;
-    for(let e of enemies){
-      const d=distance(u,e);
-      if(d<dist){dist=d;closest=e;}
-    }
-
+    for(let e of enemies){const d=distance(u,e);if(d<dist){dist=d;closest=e;}}
     let towerTarget=null, towerDist=Infinity;
-    for(let t of allEnemyTowers){
-      const d=distance(u,t);
-      if(d<towerDist){towerDist=d;towerTarget=t;}
-    }
-
+    for(let t of allEnemyTowers){const d=distance(u,t);if(d<towerDist){towerDist=d;towerTarget=t;}}
     if(u.card.id==="giant") u.target=towerTarget;
-    else {
-      if(closest && dist<=u.card.range) u.target=closest;
-      else u.target=towerTarget;
-    }
-
+    else {if(closest && dist<=u.card.range) u.target=closest; else u.target=towerTarget;}
     if(u.target){
-      const dx=u.target.x-u.x, dy=u.target.y-u.y;
-      const d=Math.hypot(dx,dy);
-      if(d>u.card.range){
-        u.x+=dx/d*u.card.speed;
-        u.y+=dy/d*u.card.speed;
-      } else {
+      const dx=u.target.x-u.x, dy=u.target.y-u.y, d=Math.hypot(dx,dy);
+      if(d>u.card.range){u.x+=dx/d*u.card.speed; u.y+=dy/d*u.card.speed;}
+      else{
         if(u.card.type==="melee") u.target.hp-=u.card.damage*dt/1000;
         else if(u.card.type==="ranged"){
-          if(Date.now()-u.lastAttack>u.card.attackSpeed){
-            spawnProjectile(u.x,u.y,u.target,u.card.damage,u.side,5,"cyan");
-            u.lastAttack=Date.now();
-          }
+          if(Date.now()-u.lastAttack>u.card.attackSpeed){spawnProjectile(u.x,u.y,u.target,u.card.damage,u.side,5,"cyan"); u.lastAttack=Date.now();}
         }
       }
     }
   }
-
   for(let i=units.length-1;i>=0;i--) if(units[i].hp<=0) units.splice(i,1);
 }
 
@@ -161,31 +147,20 @@ function updateTowers(dt){
     const set=towers[side];
     if((set.left.hp<=0 && set.right.hp<=0) && !set.king.active) set.king.active=true;
   }
-
   for(let t of allTowers){
     if(t.hp<=0) continue;
     if(t.type==="king" && !t.active) continue;
-
     const enemies=units.filter(u=>u.side===(t.y<height/2?"player":"ai"));
     let closest=null,dist=Infinity;
-    for(let e of enemies){
-      const d=distance(t,e);
-      if(d<t.range && d<dist){dist=d;closest=e;}
-    }
-    if(closest && Date.now()-t.cooldown>1000){
-      spawnProjectile(t.x,t.y,closest,(t.type==="king"?120:100),(t.y<height/2?"ai":"player"),6,"orange");
-      t.cooldown=Date.now();
-    }
+    for(let e of enemies){const d=distance(t,e); if(d<t.range && d<dist){dist=d;closest=e;}}
+    if(closest && Date.now()-t.cooldown>1000){spawnProjectile(t.x,t.y,closest,(t.type==="king"?120:100),(t.y<height/2?"ai":"player"),6,"orange"); t.cooldown=Date.now();}
   }
 }
 
 function updateProjectiles(dt){
-  for(let p of projectiles){
-    const dx=p.target.x-p.x, dy=p.target.y-p.y;
-    const d=Math.hypot(dx,dy);
-    if(d<8){p.target.hp-=p.damage;p.remove=true;continue;}
-    p.x+=dx/d*p.speed; p.y+=dy/d*p.speed;
-  }
+  for(let p of projectiles){const dx=p.target.x-p.x, dy=p.target.y-p.y, d=Math.hypot(dx,dy);
+    if(d<6){p.target.hp-=p.damage; p.remove=true; continue;}
+    p.x+=dx/d*p.speed; p.y+=dy/d*p.speed;}
   for(let i=projectiles.length-1;i>=0;i--) if(projectiles[i].remove||projectiles[i].y<0||projectiles[i].y>height) projectiles.splice(i,1);
 }
 
@@ -196,32 +171,28 @@ function draw(){
   ctx.fillStyle="#8b4513";
   ctx.fillRect(width/2-bridgeGap/2-bridgeWidth/2,riverY-40,bridgeWidth,80);
   ctx.fillRect(width/2+bridgeGap/2-bridgeWidth/2,riverY-40,bridgeWidth,80);
-
   const allTowers=[...Object.values(towers.player),...Object.values(towers.ai)];
   for(let t of allTowers){
     ctx.fillStyle=(t.y>height/2)?"blue":"red";
-    if(t.type==="king"){ctx.beginPath();ctx.arc(t.x,t.y,25,0,Math.PI*2);ctx.fill();}
-    else {ctx.fillRect(t.x-20,t.y-20,40,40);}
-    if(t.type==="king" && t.active) drawCrown(t.x,t.y-40);
+    if(t.type==="king"){ctx.beginPath();ctx.arc(t.x,t.y,20,0,Math.PI*2);ctx.fill();} 
+    else ctx.fillRect(t.x-15,t.y-15,30,30);
+    if(t.type==="king" && t.active) drawCrown(t.x,t.y-30);
     drawHealthBar(t.x,t.y,t.hp,(t.type==="king"?5000:2000));
   }
-
   for(let u of units){
     ctx.fillStyle=u.card.color;
-    if(u.card.shape==="circle"){ctx.beginPath();ctx.arc(u.x,u.y,10,0,Math.PI*2);ctx.fill();}
-    if(u.card.shape==="square"){ctx.fillRect(u.x-10,u.y-10,20,20);}
-    if(u.card.shape==="triangle"){ctx.beginPath();ctx.moveTo(u.x,u.y-10);ctx.lineTo(u.x-10,u.y+10);ctx.lineTo(u.x+10,u.y+10);ctx.closePath();ctx.fill();}
+    if(u.card.shape==="circle"){ctx.beginPath();ctx.arc(u.x,u.y,8,0,Math.PI*2);ctx.fill();}
+    if(u.card.shape==="square"){ctx.fillRect(u.x-8,u.y-8,16,16);}
+    if(u.card.shape==="triangle"){ctx.beginPath();ctx.moveTo(u.x,u.y-8);ctx.lineTo(u.x-8,u.y+8);ctx.lineTo(u.x+8,u.y+8);ctx.closePath();ctx.fill();}
     drawHealthBar(u.x,u.y,u.hp,u.card.hp);
   }
-
-  ctx.fillStyle="yellow";
-  for(let p of projectiles){ctx.beginPath();ctx.arc(p.x,p.y,3,0,Math.PI*2);ctx.fill();}
+  ctx.fillStyle="yellow"; for(let p of projectiles){ctx.beginPath();ctx.arc(p.x,p.y,3,0,Math.PI*2);ctx.fill();}
 }
 
 function aiLogic(){
-  if(aiElixir>=3+Math.random()*3 && Math.random()<0.02){
+  if(aiElixir>=3+Math.random()*3 && Math.random()<0.01){
     const card=cards[Math.floor(Math.random()*cards.length)];
-    if(aiElixir>=card.cost){spawnUnit("ai",card);aiElixir-=card.cost;}
+    if(aiElixir>=card.cost){spawnUnit("ai",card); aiElixir-=card.cost;}
   }
 }
 
@@ -239,11 +210,6 @@ function loop(t){
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
-
-canvas.addEventListener("click",()=>{
-  const card=cards[Math.floor(Math.random()*cards.length)];
-  if(elixir>=card.cost){spawnUnit("player",card);elixir-=card.cost;}
-});
 </script>
 </body>
 </html>
