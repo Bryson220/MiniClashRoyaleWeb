@@ -1,206 +1,180 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>Vertical Mini Clash Royale</title>
-<style>
-  body { margin:0; overflow:hidden; font-family:sans-serif; }
-  #gameCanvas { display:block; margin:auto; background:#87ceeb; }
-  #ui { position:absolute; top:10px; left:10px; color:#fff; font-weight:bold; z-index:10; }
-  #hand { position:absolute; bottom:10px; left:10px; display:flex; z-index:10; }
-  .card { width:60px; height:60px; margin:5px; display:flex; justify-content:center; align-items:center; cursor:grab; font-weight:bold; color:#fff; font-size:18px; }
-</style>
+  <meta charset="UTF-8" />
+  <title>Clash Royale Lite</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: #87CEEB;
+    }
+    canvas {
+      display: block;
+      margin: 0 auto;
+      background: linear-gradient(#77b255, #5ca35c);
+      border: 2px solid #333;
+    }
+  </style>
 </head>
 <body>
-<canvas id="gameCanvas" width="600" height="900"></canvas>
-<div id="ui">Elixir: 10</div>
-<div id="hand"></div>
+  <canvas id="gameCanvas" width="600" height="800"></canvas>
+  <script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
 
-<script>
-// ------------------- Constants -------------------
-const CANVAS_WIDTH = 600;
-const CANVAS_HEIGHT = 900;
-const TOWER_HP_MAX = 5000;
-const ELIXIR_MAX = 10;
-const ELIXIR_REGEN = 0.357; // 1 elixir / 2.8 sec
-const ATTACK_COOLDOWN = 1000;
-const CARD_SIZE = 40;
+    // Game constants
+    const MAP_WIDTH = 600;
+    const MAP_HEIGHT = 800;
+    const ELIXIR_REGEN = 2.8 * 60; // 2.8 seconds per elixir (at 60 FPS)
+    const BRIDGE_Y = 400; // middle bridges
 
-// Cards
-const CARD_DATA = [
-  {id:"archer",name:"Archer",hp:50,dmg:10,speed:1.5,range:150,cost:3,color:"green",shape:"circle"},
-  {id:"giant",name:"Giant",hp:200,dmg:20,speed:0.7,range:30,cost:5,color:"orange",shape:"square"},
-  {id:"knight",name:"Knight",hp:100,dmg:15,speed:1,range:30,cost:4,color:"gray",shape:"triangle"},
-  {id:"minion",name:"Minion",hp:30,dmg:8,speed:2,range:60,cost:2,color:"purple",shape:"diamond"}
-];
+    const cards = {
+      knight: { id: "knight", hp: 600, dmg: 40, range: 30, speed: 1.5, color: "blue", cost: 3 },
+      archer: { id: "archer", hp: 250, dmg: 30, range: 120, speed: 1.8, color: "purple", cost: 3 },
+      giant: { id: "giant", hp: 1200, dmg: 80, range: 25, speed: 1, color: "brown", cost: 5 }
+    };
 
-// ------------------- Canvas & Context -------------------
-const canvas = document.getElementById("gameCanvas");
-const ctx = canvas.getContext("2d");
+    const towers = {
+      player: { x: MAP_WIDTH / 2, y: MAP_HEIGHT - 100, hp: 5000 },
+      ai: { x: MAP_WIDTH / 2, y: 100, hp: 5000 }
+    };
 
-// ------------------- State -------------------
-let playerElixir = ELIXIR_MAX;
-let aiElixir = ELIXIR_MAX;
-let playerUnits = [];
-let aiUnits = [];
-let lanes = [CANVAS_WIDTH/4, CANVAS_WIDTH*3/4]; // x positions of left/right lanes
-let towers = {
-  player:{hp:TOWER_HP_MAX,x:CANVAS_WIDTH/2,y:CANVAS_HEIGHT-80},
-  ai:{hp:TOWER_HP_MAX,x:CANVAS_WIDTH/2,y:80}
-};
-let lastTime = Date.now();
+    let playerElixir = 5;
+    let aiElixir = 5;
+    let frameCount = 0;
+    let units = [];
 
-// ------------------- UI -------------------
-const uiElixir = document.getElementById("ui");
-const handDiv = document.getElementById("hand");
-
-// ------------------- Create Player Hand -------------------
-CARD_DATA.forEach(card=>{
-  const c=document.createElement("div");
-  c.className="card";
-  c.style.backgroundColor=card.color;
-  c.textContent=card.shape[0].toUpperCase();
-  c.draggable=true;
-  c.title=`${card.name} (Cost: ${card.cost})`;
-  c.addEventListener("dragstart",e=>{
-    if(playerElixir<card.cost) e.preventDefault();
-    e.dataTransfer.setData("cardId",card.id);
-  });
-  handDiv.appendChild(c);
-});
-
-// ------------------- Drag & Drop -------------------
-canvas.addEventListener("dragover",e=>e.preventDefault());
-canvas.addEventListener("drop",e=>{
-  e.preventDefault();
-  const cardId = e.dataTransfer.getData("cardId");
-  if(!cardId) return;
-  const card = CARD_DATA.find(c=>c.id===cardId);
-  if(playerElixir<card.cost) return;
-  const rect = canvas.getBoundingClientRect();
-  let x = e.clientX - rect.left;
-  let y = e.clientY - rect.top;
-  if(y<CANVAS_HEIGHT/2) return; // can't drop in AI half
-  // snap to nearest lane
-  x = lanes.reduce((prev,cur)=>Math.abs(cur-x)<Math.abs(prev-x)?cur:prev,x);
-  spawnUnit("player", card, x, y);
-  playerElixir -= card.cost;
-  updateUI();
-});
-
-// ------------------- Spawn Units -------------------
-function spawnUnit(side,card,x,y){
-  const unit = {side,card,x,y,hp:card.hp,target:null,lastAttack:0};
-  if(side==="player") playerUnits.push(unit);
-  else aiUnits.push(unit);
-}
-
-// ------------------- Elixir -------------------
-function updateUI(){uiElixir.textContent=`Elixir: ${Math.floor(playerElixir)}`;}
-
-// ------------------- Game Loop -------------------
-function gameLoop(){
-  const now = Date.now();
-  const delta = (now-lastTime)/1000;
-  lastTime = now;
-
-  // ------------------- Update Elixir -------------------
-  playerElixir = Math.min(playerElixir + ELIXIR_REGEN*delta, ELIXIR_MAX);
-  aiElixir = Math.min(aiElixir + ELIXIR_REGEN*delta, ELIXIR_MAX);
-  updateUI();
-
-  // ------------------- AI Spawn -------------------
-  if(Math.random()<0.01 && aiElixir>=2){
-    const affordable = CARD_DATA.filter(c=>c.cost<=aiElixir);
-    if(affordable.length>0){
-      const card=affordable[Math.floor(Math.random()*affordable.length)];
-      const lane = lanes[Math.floor(Math.random()*lanes.length)];
-      spawnUnit("ai", card, lane, 100);
-      aiElixir-=card.cost;
+    function distance(a, b) {
+      return Math.hypot(a.x - b.x, a.y - b.y);
     }
-  }
 
-  // ------------------- Clear Canvas -------------------
-  ctx.clearRect(0,0,CANVAS_WIDTH,CANVAS_HEIGHT);
+    function drawTower(t) {
+      ctx.fillStyle = "#444";
+      ctx.fillRect(t.x - 25, t.y - 25, 50, 50);
+      ctx.fillStyle = "red";
+      ctx.fillRect(t.x - 25, t.y - 40, 50 * (t.hp / 5000), 5);
+    }
 
-  // ------------------- Draw Bridges -------------------
-  ctx.fillStyle="#8b4513";
-  lanes.forEach(l=>ctx.fillRect(l-20,CANVAS_HEIGHT/2-40,40,80));
+    function drawBridge() {
+      ctx.fillStyle = "#8B4513";
+      ctx.fillRect(150, BRIDGE_Y - 10, 100, 20);
+      ctx.fillRect(350, BRIDGE_Y - 10, 100, 20);
+    }
 
-  // ------------------- Draw Towers -------------------
-  function drawTower(tower,color){
-    ctx.fillStyle=color;
-    ctx.beginPath();
-    ctx.arc(tower.x,tower.y,50,0,Math.PI*2);
-    ctx.fill();
-    ctx.fillStyle="white"; ctx.font="18px sans-serif"; ctx.textAlign="center";
-    ctx.fillText(Math.floor(tower.hp),tower.x,tower.y+5);
-  }
-  drawTower(towers.player,"#4a90e2");
-  drawTower(towers.ai,"#e24a4a");
+    function spawnUnit(side, card, x, y) {
+      if (side === "player" && playerElixir < card.cost) return;
+      if (side === "ai" && aiElixir < card.cost) return;
 
-  // ------------------- Update & Draw Units -------------------
-  function updateUnits(units,enemies,enemyTower,isPlayer){
-    for(let i=units.length-1;i>=0;i--){
-      let u = units[i];
-      if(u.hp<=0){units.splice(i,1); continue;}
+      const newUnit = {
+        ...card,
+        side,
+        x,
+        y,
+        hp: card.hp,
+        target: null
+      };
+      units.push(newUnit);
 
-      // Determine target
-      if(u.card.id==="giant"){
-        // Giant only attacks enemy tower
-        u.target = u.side==="player" ? towers.ai : towers.player;
-      } else {
-        let closest=null,distClosest=Infinity;
-        enemies.forEach(e=>{const d=distance(u,e);if(d<=u.card.range&&d<distClosest){distClosest=d;closest=e;}});
-        const dt = distance(u,enemyTower);
-        if(dt<=u.card.range&&dt<distClosest) closest={x:enemyTower.x,y:enemyTower.y,isTower:true};
-        u.target=closest;
-      }
+      if (side === "player") playerElixir -= card.cost;
+      else aiElixir -= card.cost;
+    }
 
-      // Move or attack
-      if(u.target){
-        const dx=u.target.x-u.x;
-        const dy=u.target.y-u.y;
-        const dist=Math.hypot(dx,dy);
-        if(dist<=u.card.range && Date.now()-u.lastAttack>ATTACK_COOLDOWN){
-          u.lastAttack=Date.now();
-          if(u.target.isTower){
-            if(isPlayer) towers.ai.hp-=u.card.dmg; else towers.player.hp-=u.card.dmg;
-          } else u.target.hp-=u.card.dmg;
-        } else if(dist>u.card.range){
-          u.x+=dx/dist*u.card.speed*2;
-          u.y+=dy/dist*u.card.speed*2;
-          // stay in lane
-          const lane = lanes.reduce((prev,cur)=>Math.abs(cur-u.x)<Math.abs(prev-u.x)?cur:prev,u.x);
-          u.x = lane;
+    function updateUnits() {
+      for (let u of units) {
+        const enemies = units.filter(e => e.side !== u.side);
+        let enemyTower = u.side === "player" ? towers.ai : towers.player;
+
+        // GIANT targets tower directly
+        if (u.id === "giant") {
+          u.target = enemyTower;
+        } else {
+          // find nearest enemy
+          let closest = null, distClosest = Infinity;
+          for (let e of enemies) {
+            const d = distance(u, e);
+            if (d < distClosest && d <= u.range * 2) {
+              distClosest = d;
+              closest = e;
+            }
+          }
+          if (closest) u.target = closest;
+          else if (distance(u, enemyTower) < 600) u.target = enemyTower;
+        }
+
+        // movement & attacking
+        if (u.target) {
+          const d = distance(u, u.target);
+          if (d > u.range) {
+            const dx = (u.target.x - u.x) / d;
+            const dy = (u.target.y - u.y) / d;
+            u.x += dx * u.speed;
+            u.y += dy * u.speed;
+          } else {
+            // attack
+            u.target.hp -= u.dmg * 0.05;
+            if (u.target.hp <= 0) {
+              if (u.target.isTower) u.target.hp = 0;
+              else units = units.filter(e => e !== u.target);
+            }
+          }
         }
       }
-
-      // Draw unit
-      ctx.fillStyle=u.card.color;
-      if(u.card.shape==="circle") ctx.beginPath(),ctx.arc(u.x,u.y,CARD_SIZE/2,0,Math.PI*2),ctx.fill();
-      else if(u.card.shape==="square") ctx.fillRect(u.x-CARD_SIZE/2,u.y-CARD_SIZE/2,CARD_SIZE,CARD_SIZE);
-      else if(u.card.shape==="triangle"){ctx.beginPath();ctx.moveTo(u.x,u.y-CARD_SIZE/2);ctx.lineTo(u.x-CARD_SIZE/2,u.y+CARD_SIZE/2);ctx.lineTo(u.x+CARD_SIZE/2,u.y+CARD_SIZE/2);ctx.closePath();ctx.fill();}
-      else if(u.card.shape==="diamond"){ctx.save();ctx.translate(u.x,u.y);ctx.rotate(Math.PI/4);ctx.fillRect(-CARD_SIZE/2,-CARD_SIZE/2,CARD_SIZE,CARD_SIZE);ctx.restore();}
-
-      // Draw HP bar
-      ctx.fillStyle="red"; ctx.fillRect(u.x-CARD_SIZE/2,u.y-CARD_SIZE/2-8,CARD_SIZE,5);
-      ctx.fillStyle="green"; ctx.fillRect(u.x-CARD_SIZE/2,u.y-CARD_SIZE/2-8,CARD_SIZE*(u.hp/u.card.hp),5);
     }
-  }
 
-  updateUnits(playerUnits,aiUnits,towers.ai,true);
-  updateUnits(aiUnits,playerUnits,towers.player,false);
+    function drawUnits() {
+      for (let u of units) {
+        ctx.beginPath();
+        if (u.id === "knight") ctx.rect(u.x - 10, u.y - 10, 20, 20);
+        else if (u.id === "archer") ctx.arc(u.x, u.y, 10, 0, Math.PI * 2);
+        else if (u.id === "giant") ctx.rect(u.x - 15, u.y - 15, 30, 30);
+        ctx.fillStyle = u.side === "player" ? u.color : "red";
+        ctx.fill();
+      }
+    }
 
-  requestAnimationFrame(gameLoop);
-}
+    function aiLogic() {
+      if (Math.random() < 0.01 && aiElixir >= 3) {
+        const cardKeys = Object.keys(cards);
+        const c = cards[cardKeys[Math.floor(Math.random() * cardKeys.length)]];
+        spawnUnit("ai", c, 200 + Math.random() * 200, 200);
+      }
+    }
 
-// ------------------- Utility -------------------
-function distance(a,b){return Math.hypot(a.x-b.x,a.y-b.y);}
+    function gameLoop() {
+      ctx.clearRect(0, 0, MAP_WIDTH, MAP_HEIGHT);
+      drawBridge();
+      drawTower(towers.player);
+      drawTower(towers.ai);
+      drawUnits();
 
-// ------------------- Start Game -------------------
-updateUI();
-gameLoop();
-</script>
+      frameCount++;
+      if (frameCount % ELIXIR_REGEN === 0) {
+        if (playerElixir < 10) playerElixir++;
+        if (aiElixir < 10) aiElixir++;
+      }
+
+      updateUnits();
+      aiLogic();
+
+      // Elixir display
+      ctx.fillStyle = "white";
+      ctx.font = "18px Arial";
+      ctx.fillText("Elixir: " + playerElixir.toFixed(0), 20, MAP_HEIGHT - 20);
+
+      requestAnimationFrame(gameLoop);
+    }
+
+    canvas.addEventListener("click", (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const chosen = cards.knight; // spawn Knight by default
+      spawnUnit("player", chosen, x, y);
+    });
+
+    gameLoop();
+  </script>
 </body>
 </html>
