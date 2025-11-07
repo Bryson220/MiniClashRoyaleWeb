@@ -5,15 +5,21 @@
   <title>Mini Clash Royale React</title>
   <style>
     body { text-align:center; font-family: Arial; }
-    #root { position: relative; width: 800px; height: 600px; margin: auto; background: #87ceeb; border: 2px solid black; }
+    #root { position: relative; width: 800px; height: 400px; margin: auto; background: #87ceeb; border: 2px solid black; }
+    .card-container { position: absolute; bottom: 10px; left: 0; right: 0; display: flex; justify-content: center; }
+    .card-container img { margin: 5px; width: 60px; height: 60px; cursor: grab; }
   </style>
 </head>
 <body>
   <h1>Mini Clash Royale React</h1>
   <div id="root"></div>
+
+  <!-- React + Babel CDNs -->
   <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
   <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+
+  <!-- Your game script -->
   <script type="text/babel" src="script.js"></script>
 </body>
 </html>
