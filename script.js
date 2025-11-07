@@ -1,23 +1,19 @@
-const CARD_DATA = [
-  { id: "archer", name: "Archer", cost: 3, hp: 50, dmg: 10, speed: 1.5, range: 100, img: "https://i.imgur.com/3X9QZ9Q.png" },
-  { id: "giant", name: "Giant", cost: 5, hp: 200, dmg: 20, speed: 0.7, range: 30, img: "https://i.imgur.com/7Q9XQ9Q.png" },
-  { id: "minion", name: "Minion", cost: 2, hp: 30, dmg: 8, speed: 2, range: 50, img: "https://i.imgur.com/6X9X9X9.png" },
-  { id: "knight", name: "Knight", cost: 3, hp: 100, dmg: 15, speed: 1, range: 30, img: "https://i.imgur.com/5X9X9X9.png" },
-];
+const { useState, useEffect, useRef } = React;
 
 const TOWER_HP = 500;
 const MAX_ELIXIR = 10;
 const ELIXIR_REGEN_RATE = 1; // per second
 
-const { useState, useEffect, useRef } = React;
+// Use placeholder images for guaranteed visibility
+const CARD_DATA = [
+  { id: "archer", name: "Archer", cost: 3, hp: 50, dmg: 10, speed: 1.5, range: 100, img: "https://via.placeholder.com/40x40.png?text=A" },
+  { id: "giant", name: "Giant", cost: 5, hp: 200, dmg: 20, speed: 0.7, range: 30, img: "https://via.placeholder.com/40x40.png?text=G" },
+  { id: "minion", name: "Minion", cost: 2, hp: 30, dmg: 8, speed: 2, range: 50, img: "https://via.placeholder.com/40x40.png?text=M" },
+  { id: "knight", name: "Knight", cost: 3, hp: 100, dmg: 15, speed: 1, range: 30, img: "https://via.placeholder.com/40x40.png?text=K" },
+];
 
-function distance(a, b) {
-  return Math.hypot(a.x - b.x, a.y - b.y);
-}
-
-function clamp(value, min, max) {
-  return Math.min(Math.max(value, min), max);
-}
+function clamp(value, min, max) { return Math.min(Math.max(value, min), max); }
+function distance(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
 
 function useInterval(callback, delay) {
   const savedCallback = useRef();
@@ -61,23 +57,11 @@ function Unit({ unit }) {
 }
 
 function Tower({ side, hp }) {
-  const style = {
-    position: "absolute",
-    width: 80,
-    height: 120,
-    backgroundColor: side === "player" ? "#4a90e2" : "#e24a4a",
-    bottom: 0,
-    [side === "player" ? "left" : "right"]: 20,
-    borderRadius: 10,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    color: "white",
-    fontWeight: "bold",
-    fontSize: 18,
-    userSelect: "none",
-  };
-  return <div style={style} title={`${side} tower HP: ${hp}`}>{hp}</div>;
+  return (
+    <div className={`tower ${side}-tower`} title={`${side} tower HP: ${hp}`}>
+      {hp}
+    </div>
+  );
 }
 
 function App() {
@@ -89,115 +73,94 @@ function App() {
   const [draggingCard, setDraggingCard] = useState(null);
   const fieldRef = useRef();
 
-  // Elixir regen
-  useInterval(() => {
-    setPlayerElixir((e) => clamp(e + ELIXIR_REGEN_RATE, 0, MAX_ELIXIR));
-  }, 1000);
-
-  // Opponent AI elixir
   const opponentElixirRef = useRef(MAX_ELIXIR);
 
-  // AI plays cards randomly
+  // Elixir regen
+  useInterval(() => setPlayerElixir(e => clamp(e + ELIXIR_REGEN_RATE, 0, MAX_ELIXIR)), 1000);
+
+  // AI plays cards
   useInterval(() => {
-    if (opponentElixirRef.current >= 2) {
-      const affordable = CARD_DATA.filter((c) => c.cost <= opponentElixirRef.current);
-      if (affordable.length > 0) {
-        const card = affordable[Math.floor(Math.random() * affordable.length)];
+    if(opponentElixirRef.current >= 2){
+      const affordable = CARD_DATA.filter(c=>c.cost <= opponentElixirRef.current);
+      if(affordable.length>0){
+        const card = affordable[Math.floor(Math.random()*affordable.length)];
         spawnUnit("opponent", card);
         opponentElixirRef.current -= card.cost;
       }
     }
-    opponentElixirRef.current = clamp(opponentElixirRef.current + ELIXIR_REGEN_RATE, 0, MAX_ELIXIR);
+    opponentElixirRef.current = clamp(opponentElixirRef.current + ELIXIR_REGEN_RATE,0,MAX_ELIXIR);
   }, 1500);
 
   function spawnUnit(side, card, pos = null) {
-    const yBase = side === "player" ? 300 : 50;
-    const xBase = pos ? pos.x : side === "player" ? 100 : 700;
+    const yBase = side==="player" ? 300 : 50;
+    const xBase = pos ? pos.x : side==="player" ? 100 : 700;
     const newUnit = {
-      id: Math.random().toString(36).substr(2, 9),
+      id: Math.random().toString(36).substr(2,9),
       card,
       hp: card.hp,
-      pos: { x: xBase, y: yBase },
+      pos:{x:xBase,y:yBase},
       side,
-      lastAttackTime: 0,
+      lastAttackTime:0,
     };
-    if (side === "player") setPlayerUnits((units) => [...units, newUnit]);
-    else setOpponentUnits((units) => [...units, newUnit]);
+    if(side==="player") setPlayerUnits(units=>[...units,newUnit]);
+    else setOpponentUnits(units=>[...units,newUnit]);
   }
 
   function onDragStart(e, card) {
-    if (playerElixir < card.cost) e.preventDefault();
+    if(playerElixir < card.cost) e.preventDefault();
     else setDraggingCard(card);
   }
 
-  function onDrop(e) {
+  function onDrop(e){
     e.preventDefault();
-    if (!draggingCard) return;
+    if(!draggingCard) return;
     const rect = fieldRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-    if (y < 150) { setDraggingCard(null); return; }
-    if (playerElixir >= draggingCard.cost) {
-      spawnUnit("player", draggingCard, { x, y });
-      setPlayerElixir((e) => e - draggingCard.cost);
+    if(y<150){ setDraggingCard(null); return; }
+    if(playerElixir >= draggingCard.cost){
+      spawnUnit("player", draggingCard, {x,y});
+      setPlayerElixir(e => e - draggingCard.cost);
     }
     setDraggingCard(null);
   }
 
-  function onDragOver(e) { e.preventDefault(); }
+  function onDragOver(e){ e.preventDefault(); }
 
-  // Game loop: move units and attack towers
-  useInterval(() => {
+  // Game loop: move units & attack towers
+  useInterval(()=>{
     // Move player units
-    setPlayerUnits((units) =>
-      units.map((u) => {
-        const newX = u.pos.x + u.card.speed * 5;
-        // attack tower if close
-        if (newX >= 720) {
-          setOpponentTowerHp((hp) => Math.max(hp - u.card.dmg, 0));
-          return u;
-        }
-        return { ...u, pos: { x: newX, y: u.pos.y } };
-      })
-    );
+    setPlayerUnits(units => units.map(u => {
+      const newX = u.pos.x + u.card.speed*5;
+      if(newX >= 720){ setOpponentTowerHp(hp => Math.max(hp - u.card.dmg,0)); return u; }
+      return {...u,pos:{x:newX,y:u.pos.y}};
+    }));
     // Move opponent units
-    setOpponentUnits((units) =>
-      units.map((u) => {
-        const newX = u.pos.x - u.card.speed * 5;
-        if (newX <= 80) {
-          setPlayerTowerHp((hp) => Math.max(hp - u.card.dmg, 0));
-          return u;
-        }
-        return { ...u, pos: { x: newX, y: u.pos.y } };
-      })
-    );
-  }, 100);
+    setOpponentUnits(units => units.map(u => {
+      const newX = u.pos.x - u.card.speed*5;
+      if(newX <= 80){ setPlayerTowerHp(hp => Math.max(hp - u.card.dmg,0)); return u; }
+      return {...u,pos:{x:newX,y:u.pos.y}};
+    }));
+  },100);
 
   return (
     <div
       ref={fieldRef}
-      style={{ position: "relative", width: 800, height: 400, margin: "auto", background: "#87ceeb" }}
+      style={{ position:"relative", width:800, height:400, margin:"auto", background:"#87ceeb" }}
       onDrop={onDrop}
       onDragOver={onDragOver}
     >
       <Tower side="player" hp={playerTowerHp} />
       <Tower side="opponent" hp={opponentTowerHp} />
-      {playerUnits.map((u) => <Unit key={u.id} unit={u} />)}
-      {opponentUnits.map((u) => <Unit key={u.id} unit={u} />)}
-
+      {playerUnits.map(u => <Unit key={u.id} unit={u}/>)}
+      {opponentUnits.map(u => <Unit key={u.id} unit={u}/>)}
       <div className="card-container">
-        {CARD_DATA.map((card) => (
-          <Card key={card.id} card={card} onDragStart={onDragStart} />
-        ))}
+        {CARD_DATA.map(card => <Card key={card.id} card={card} onDragStart={onDragStart}/>)}
       </div>
-
-      <div style={{ position: "absolute", top: 10, left: 10, fontWeight: "bold" }}>
-        Elixir: {playerElixir}
-      </div>
+      <div style={{position:"absolute", top:10, left:10, fontWeight:"bold"}}>Elixir: {playerElixir}</div>
     </div>
   );
 }
 
-// Render the game
 const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(<App />);
