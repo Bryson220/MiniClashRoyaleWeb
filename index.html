@@ -16,162 +16,216 @@
       background: linear-gradient(#77b255, #5ca35c);
       border: 2px solid #333;
     }
+    #ui {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      height: 100px;
+      background: rgba(50,50,50,0.8);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      color: white;
+      font-family: sans-serif;
+    }
+    .card {
+      width: 60px;
+      height: 80px;
+      border-radius: 8px;
+      background: #999;
+      border: 2px solid #333;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+    .card:hover { transform: scale(1.1); }
+    .elixir {
+      position: fixed;
+      bottom: 110px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.5);
+      color: white;
+      padding: 5px 10px;
+      border-radius: 10px;
+      font-size: 18px;
+      font-family: sans-serif;
+    }
   </style>
 </head>
 <body>
   <canvas id="gameCanvas" width="600" height="800"></canvas>
+  <div class="elixir" id="elixirDisplay">Elixir: 5</div>
+  <div id="ui">
+    <div class="card" data-id="knight" style="background:blue;">Knight</div>
+    <div class="card" data-id="archer" style="background:purple;">Archer</div>
+    <div class="card" data-id="giant" style="background:brown;">Giant</div>
+  </div>
+
   <script>
     const canvas = document.getElementById("gameCanvas");
     const ctx = canvas.getContext("2d");
+    const elixirDisplay = document.getElementById("elixirDisplay");
 
-    // Game constants
-    const MAP_WIDTH = 600;
-    const MAP_HEIGHT = 800;
-    const ELIXIR_REGEN = 2.8 * 60; // 2.8 seconds per elixir (at 60 FPS)
-    const BRIDGE_Y = 400; // middle bridges
+    // Map
+    const MAP_WIDTH = 600, MAP_HEIGHT = 800;
+    const RIVER_Y1 = 370, RIVER_Y2 = 430;
+    const BRIDGES = [{x:150, width:100},{x:350, width:100}];
 
     const cards = {
-      knight: { id: "knight", hp: 600, dmg: 40, range: 30, speed: 1.5, color: "blue", cost: 3 },
-      archer: { id: "archer", hp: 250, dmg: 30, range: 120, speed: 1.8, color: "purple", cost: 3 },
-      giant: { id: "giant", hp: 1200, dmg: 80, range: 25, speed: 1, color: "brown", cost: 5 }
+      knight:{id:"knight",hp:600,dmg:40,range:30,speed:1.5,color:"blue",cost:3},
+      archer:{id:"archer",hp:250,dmg:30,range:120,speed:1.8,color:"purple",cost:3},
+      giant:{id:"giant",hp:1200,dmg:80,range:25,speed:1,color:"brown",cost:5}
     };
 
     const towers = {
-      player: { x: MAP_WIDTH / 2, y: MAP_HEIGHT - 100, hp: 5000 },
-      ai: { x: MAP_WIDTH / 2, y: 100, hp: 5000 }
+      player:{x:MAP_WIDTH/2, y:MAP_HEIGHT-80, hp:5000, isTower:true},
+      ai:{x:MAP_WIDTH/2, y:80, hp:5000, isTower:true}
     };
 
-    let playerElixir = 5;
-    let aiElixir = 5;
-    let frameCount = 0;
-    let units = [];
+    let playerElixir=5, aiElixir=5, frame=0;
+    const ELIXIR_REGEN=2.8*60; // every 2.8s
+    let units=[];
+    let selectedCard=null;
 
-    function distance(a, b) {
-      return Math.hypot(a.x - b.x, a.y - b.y);
+    function distance(a,b){return Math.hypot(a.x-b.x,a.y-b.y);}
+
+    function drawMap(){
+      ctx.fillStyle="#77b255";
+      ctx.fillRect(0,0,MAP_WIDTH,MAP_HEIGHT);
+
+      // river
+      ctx.fillStyle="#4DA6FF";
+      ctx.fillRect(0,RIVER_Y1,MAP_WIDTH,RIVER_Y2-RIVER_Y1);
+
+      // bridges
+      ctx.fillStyle="#8B4513";
+      for(const b of BRIDGES)
+        ctx.fillRect(b.x,RIVER_Y1,b.width,RIVER_Y2-RIVER_Y1);
     }
 
-    function drawTower(t) {
-      ctx.fillStyle = "#444";
-      ctx.fillRect(t.x - 25, t.y - 25, 50, 50);
-      ctx.fillStyle = "red";
-      ctx.fillRect(t.x - 25, t.y - 40, 50 * (t.hp / 5000), 5);
+    function drawTower(t){
+      ctx.fillStyle="#444";
+      ctx.fillRect(t.x-25,t.y-25,50,50);
+      ctx.fillStyle="red";
+      ctx.fillRect(t.x-25,t.y-40,50*(t.hp/5000),5);
     }
 
-    function drawBridge() {
-      ctx.fillStyle = "#8B4513";
-      ctx.fillRect(150, BRIDGE_Y - 10, 100, 20);
-      ctx.fillRect(350, BRIDGE_Y - 10, 100, 20);
+    function spawnUnit(side,card,x,y){
+      if(side==="player"&&playerElixir<card.cost)return;
+      if(side==="ai"&&aiElixir<card.cost)return;
+      const unit={...card,side,x,y,hp:card.hp,target:null};
+      units.push(unit);
+      if(side==="player")playerElixir-=card.cost;
+      else aiElixir-=card.cost;
     }
 
-    function spawnUnit(side, card, x, y) {
-      if (side === "player" && playerElixir < card.cost) return;
-      if (side === "ai" && aiElixir < card.cost) return;
+    function insideBridge(x){return BRIDGES.some(b=>x>b.x&&x<b.x+b.width);}
 
-      const newUnit = {
-        ...card,
-        side,
-        x,
-        y,
-        hp: card.hp,
-        target: null
-      };
-      units.push(newUnit);
+    function validPosition(y){return !(y>RIVER_Y1&&y<RIVER_Y2);} // not in river
 
-      if (side === "player") playerElixir -= card.cost;
-      else aiElixir -= card.cost;
-    }
+    function updateUnits(){
+      for(const u of units){
+        const enemies=units.filter(e=>e.side!==u.side);
+        const enemyTower=u.side==="player"?towers.ai:towers.player;
 
-    function updateUnits() {
-      for (let u of units) {
-        const enemies = units.filter(e => e.side !== u.side);
-        let enemyTower = u.side === "player" ? towers.ai : towers.player;
-
-        // GIANT targets tower directly
-        if (u.id === "giant") {
-          u.target = enemyTower;
-        } else {
-          // find nearest enemy
-          let closest = null, distClosest = Infinity;
-          for (let e of enemies) {
-            const d = distance(u, e);
-            if (d < distClosest && d <= u.range * 2) {
-              distClosest = d;
-              closest = e;
-            }
+        // Target selection
+        if(u.id==="giant"){
+          u.target=enemyTower;
+        }else{
+          let closest=null,dist=Infinity;
+          for(const e of enemies){
+            const d=distance(u,e);
+            if(d<dist&&d<u.range*2){dist=d;closest=e;}
           }
-          if (closest) u.target = closest;
-          else if (distance(u, enemyTower) < 600) u.target = enemyTower;
+          if(closest)u.target=closest;
+          else if(distance(u,enemyTower)<600)u.target=enemyTower;
         }
 
-        // movement & attacking
-        if (u.target) {
-          const d = distance(u, u.target);
-          if (d > u.range) {
-            const dx = (u.target.x - u.x) / d;
-            const dy = (u.target.y - u.y) / d;
-            u.x += dx * u.speed;
-            u.y += dy * u.speed;
-          } else {
-            // attack
-            u.target.hp -= u.dmg * 0.05;
-            if (u.target.hp <= 0) {
-              if (u.target.isTower) u.target.hp = 0;
-              else units = units.filter(e => e !== u.target);
+        // Move or attack
+        if(u.target){
+          const d=distance(u,u.target);
+          if(d>u.range){
+            const dx=(u.target.x-u.x)/d;
+            const dy=(u.target.y-u.y)/d;
+
+            // Block river unless on bridge
+            const nextY=u.y+dy*u.speed;
+            if((u.side==="player" && nextY>RIVER_Y2) || (u.side==="ai" && nextY<RIVER_Y1) || insideBridge(u.x)){
+              u.x+=dx*u.speed;
+              u.y+=dy*u.speed;
+            }
+          }else{
+            // Attack
+            u.target.hp-=u.dmg*0.05;
+            if(u.target.hp<=0){
+              if(u.target.isTower)u.target.hp=0;
+              else units=units.filter(e=>e!==u.target);
             }
           }
         }
       }
     }
 
-    function drawUnits() {
-      for (let u of units) {
+    function drawUnits(){
+      for(const u of units){
         ctx.beginPath();
-        if (u.id === "knight") ctx.rect(u.x - 10, u.y - 10, 20, 20);
-        else if (u.id === "archer") ctx.arc(u.x, u.y, 10, 0, Math.PI * 2);
-        else if (u.id === "giant") ctx.rect(u.x - 15, u.y - 15, 30, 30);
-        ctx.fillStyle = u.side === "player" ? u.color : "red";
+        if(u.id==="knight")ctx.rect(u.x-10,u.y-10,20,20);
+        else if(u.id==="archer")ctx.arc(u.x,u.y,10,0,Math.PI*2);
+        else if(u.id==="giant")ctx.rect(u.x-15,u.y-15,30,30);
+        ctx.fillStyle=u.side==="player"?u.color:"red";
         ctx.fill();
       }
     }
 
-    function aiLogic() {
-      if (Math.random() < 0.01 && aiElixir >= 3) {
-        const cardKeys = Object.keys(cards);
-        const c = cards[cardKeys[Math.floor(Math.random() * cardKeys.length)]];
-        spawnUnit("ai", c, 200 + Math.random() * 200, 200);
+    function aiLogic(){
+      if(Math.random()<0.01 && aiElixir>=3){
+        const keys=Object.keys(cards);
+        const c=cards[keys[Math.floor(Math.random()*keys.length)]];
+        const x=200+Math.random()*200;
+        const y=150+Math.random()*100;
+        spawnUnit("ai",c,x,y);
       }
     }
 
-    function gameLoop() {
-      ctx.clearRect(0, 0, MAP_WIDTH, MAP_HEIGHT);
-      drawBridge();
+    function gameLoop(){
+      ctx.clearRect(0,0,MAP_WIDTH,MAP_HEIGHT);
+      drawMap();
       drawTower(towers.player);
       drawTower(towers.ai);
       drawUnits();
-
-      frameCount++;
-      if (frameCount % ELIXIR_REGEN === 0) {
-        if (playerElixir < 10) playerElixir++;
-        if (aiElixir < 10) aiElixir++;
-      }
-
       updateUnits();
       aiLogic();
 
-      // Elixir display
-      ctx.fillStyle = "white";
-      ctx.font = "18px Arial";
-      ctx.fillText("Elixir: " + playerElixir.toFixed(0), 20, MAP_HEIGHT - 20);
-
+      frame++;
+      if(frame%ELIXIR_REGEN===0){
+        if(playerElixir<10)playerElixir++;
+        if(aiElixir<10)aiElixir++;
+      }
+      elixirDisplay.textContent="Elixir: "+playerElixir.toFixed(0);
       requestAnimationFrame(gameLoop);
     }
 
-    canvas.addEventListener("click", (e) => {
-      const rect = canvas.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-      const chosen = cards.knight; // spawn Knight by default
-      spawnUnit("player", chosen, x, y);
+    // Card UI interaction
+    document.querySelectorAll(".card").forEach(card=>{
+      card.addEventListener("click",()=>{
+        selectedCard=cards[card.dataset.id];
+        document.querySelectorAll(".card").forEach(c=>c.style.border="2px solid #333");
+        card.style.border="3px solid yellow";
+      });
+    });
+
+    canvas.addEventListener("click",e=>{
+      if(!selectedCard)return;
+      const rect=canvas.getBoundingClientRect();
+      const x=e.clientX-rect.left;
+      const y=e.clientY-rect.top;
+      if(y>RIVER_Y2)spawnUnit("player",selectedCard,x,y);
     });
 
     gameLoop();
