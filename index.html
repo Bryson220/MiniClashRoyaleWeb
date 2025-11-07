@@ -1,63 +1,163 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <title>Mini Clash Royale React</title>
-  <style>
-    body { text-align:center; font-family: Arial; }
-    #root {
-      position: relative;
-      width: 800px;
-      height: 400px;
-      margin: auto;
-      background: linear-gradient(#87ceeb, #add8e6); /* sky */
-      border: 2px solid black;
-      overflow: hidden;
-    }
-    .card-container {
-      position: absolute;
-      bottom: 10px;
-      left: 0;
-      right: 0;
-      display: flex;
-      justify-content: center;
-    }
-    .card-container img {
-      margin: 5px;
-      width: 60px;
-      height: 60px;
-      cursor: grab;
-      border: 2px solid #333;
-      border-radius: 5px;
-      background: #fff;
-    }
-    .tower {
-      position: absolute;
-      width: 80px;
-      height: 120px;
-      border-radius: 10px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: white;
-      font-weight: bold;
-      font-size: 18px;
-      user-select: none;
-    }
-    .player-tower { background-color: #4a90e2; left: 20px; bottom: 0; }
-    .opponent-tower { background-color: #e24a4a; right: 20px; top: 0; }
-  </style>
-</head>
-<body>
-  <h1>Mini Clash Royale React</h1>
-  <div id="root"></div>
+import React, { useState, useEffect, useRef } from "react";
+import ReactDOM from "react-dom";
 
-  <!-- React + Babel CDNs -->
-  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-  <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+const MAP_WIDTH = 800;
+const MAP_HEIGHT = 400;
+const TOWER_WIDTH = 80;
+const TOWER_HEIGHT = 120;
+const ELIXIR_MAX = 10;
+const ELIXIR_REGEN = 1;
+const CARD_SIZE = 50;
 
-  <!-- Game script -->
-  <script type="text/babel" src="script.js"></script>
-</body>
-</html>
+const CARD_DATA = [
+  { id: "archer", name: "Archer", hp: 50, dmg: 10, speed: 1.5, range: 100, cost: 3, img: "https://via.placeholder.com/50x50?text=A" },
+  { id: "giant", name: "Giant", hp: 200, dmg: 20, speed: 0.7, range: 30, cost: 5, img: "https://via.placeholder.com/50x50?text=G" },
+  { id: "knight", name: "Knight", hp: 100, dmg: 15, speed: 1, range: 30, cost: 4, img: "https://via.placeholder.com/50x50?text=K" },
+  { id: "minion", name: "Minion", hp: 30, dmg: 8, speed: 2, range: 50, cost: 2, img: "https://via.placeholder.com/50x50?text=M" },
+];
+
+function clamp(value, min, max) { return Math.min(Math.max(value, min), max); }
+function distance(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+
+function useInterval(callback, delay) {
+  const saved = useRef();
+  useEffect(()=>{ saved.current=callback; }, [callback]);
+  useEffect(()=>{
+    if(delay===null) return;
+    const id=setInterval(()=>saved.current(), delay);
+    return ()=>clearInterval(id);
+  }, [delay]);
+}
+
+function Card({ card, onDragStart }) {
+  return <img src={card.img} alt={card.name} draggable onDragStart={(e)=>onDragStart(e,card)}
+    style={{width:CARD_SIZE, height:CARD_SIZE, margin:5, cursor:"grab"}} title={`${card.name} (Cost:${card.cost})`}/>
+}
+
+function Unit({ unit }) {
+  return <>
+    <img src={unit.card.img} alt={unit.card.name} style={{
+      position:"absolute",
+      width:CARD_SIZE,
+      height:CARD_SIZE,
+      left:unit.pos.x,
+      top:unit.pos.y,
+      pointerEvents:"none"
+    }}/>
+    <div style={{
+      position:"absolute",
+      left:unit.pos.x,
+      top:unit.pos.y-5,
+      width:CARD_SIZE,
+      height:5,
+      background:"#f00"
+    }}>
+      <div style={{width:`${unit.hp/unit.card.hp*100}%`, height:"100%", background:"#0f0"}}></div>
+    </div>
+  </>
+}
+
+function Tower({ x, y, hp, side }) {
+  return <div style={{
+    position:"absolute",
+    left:x, top:y,
+    width:TOWER_WIDTH,
+    height:TOWER_HEIGHT,
+    backgroundColor: side==="player"?"#4a90e2":"#e24a4a",
+    borderRadius:10,
+    display:"flex",
+    justifyContent:"center",
+    alignItems:"center",
+    color:"#fff",
+    fontWeight:"bold",
+    fontSize:18
+  }}>{hp}</div>
+}
+
+function App() {
+  const [playerElixir, setPlayerElixir]=useState(ELIXIR_MAX);
+  const [playerUnits,setPlayerUnits]=useState([]);
+  const [aiUnits,setAiUnits]=useState([]);
+  const [draggingCard,setDraggingCard]=useState(null);
+  const fieldRef=useRef();
+  const opponentElixirRef=useRef(ELIXIR_MAX);
+
+  const towers = {
+    player:{x:50, y:MAP_HEIGHT/2-TOWER_HEIGHT/2, hp:500},
+    ai:{x:MAP_WIDTH-50-TOWER_WIDTH, y:MAP_HEIGHT/2-TOWER_HEIGHT/2, hp:500}
+  };
+
+  // Elixir regen
+  useInterval(()=>setPlayerElixir(e=>clamp(e+ELIXIR_REGEN,0,ELIXIR_MAX)),1000);
+  useInterval(()=>{
+    opponentElixirRef.current = clamp(opponentElixirRef.current+ELIXIR_REGEN,0,ELIXIR_MAX);
+    if(opponentElixirRef.current>=2){
+      const affordable = CARD_DATA.filter(c=>c.cost<=opponentElixirRef.current);
+      if(affordable.length>0){
+        const card = affordable[Math.floor(Math.random()*affordable.length)];
+        spawnUnit("ai", card);
+        opponentElixirRef.current -= card.cost;
+      }
+    }
+  },1500);
+
+  function spawnUnit(side, card, pos=null){
+    const yBase = side==="player"?MAP_HEIGHT-150:50;
+    const xBase = pos?pos.x: side==="player"?100:MAP_WIDTH-100;
+    const newUnit = {id:Math.random().toString(36).substr(2,9), card, hp:card.hp, pos:{x:xBase,y:yBase}, side, lastAttack:0};
+    if(side==="player") setPlayerUnits(u=>[...u,newUnit]);
+    else setAiUnits(u=>[...u,newUnit]);
+  }
+
+  function onDragStart(e,card){ if(playerElixir<card.cost) e.preventDefault(); else setDraggingCard(card); }
+  function onDrop(e){
+    e.preventDefault();
+    if(!draggingCard) return;
+    const rect = fieldRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    if(y<MAP_HEIGHT/2) { setDraggingCard(null); return; }
+    if(playerElixir>=draggingCard.cost){ spawnUnit("player",draggingCard,{x,y}); setPlayerElixir(e=>e-draggingCard.cost); }
+    setDraggingCard(null);
+  }
+  function onDragOver(e){ e.preventDefault(); }
+
+  // Movement and attack loop
+  useInterval(()=>{
+    setPlayerUnits(units=>{
+      return units.map(u=>{
+        const dx = towers.ai.x - u.pos.x;
+        const dy = towers.ai.y - u.pos.y;
+        const dist = Math.hypot(dx,dy);
+        if(dist>u.card.range){ return {...u, pos:{x:u.pos.x+dx/dist*u.card.speed*5, y:u.pos.y+dy/dist*u.card.speed*5}}; }
+        return u;
+      })
+    });
+    setAiUnits(units=>{
+      return units.map(u=>{
+        const dx = towers.player.x - u.pos.x;
+        const dy = towers.player.y - u.pos.y;
+        const dist = Math.hypot(dx,dy);
+        if(dist>u.card.range){ return {...u, pos:{x:u.pos.x+dx/dist*u.card.speed*5, y:u.pos.y+dy/dist*u.card.speed*5}}; }
+        return u;
+      })
+    });
+  },100);
+
+  return (
+    <div ref={fieldRef} style={{position:"relative",width:MAP_WIDTH,height:MAP_HEIGHT,margin:"auto",background:"#87ceeb"}} onDrop={onDrop} onDragOver={onDragOver}>
+      {/* river */}
+      <div style={{position:"absolute", top:MAP_HEIGHT/2-25,left:0,width:MAP_WIDTH,height:50, background:"#00bfff"}}></div>
+      <Tower {...towers.player} side="player"/>
+      <Tower {...towers.ai} side="ai"/>
+      {playerUnits.map(u=><Unit key={u.id} unit={u}/>)}
+      {aiUnits.map(u=><Unit key={u.id} unit={u}/>)}
+      <div style={{position:"absolute", bottom:10,left:10, display:"flex"}}>
+        {CARD_DATA.map(c=><Card key={c.id} card={c} onDragStart={onDragStart}/>)}
+      </div>
+      <div style={{position:"absolute", top:10,left:10, fontWeight:"bold"}}>Elixir: {playerElixir}</div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
