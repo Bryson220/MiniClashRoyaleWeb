@@ -1,227 +1,561 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Clash Royale Lite (Full View)</title>
-<style>
-  html, body {
-    margin: 0;
-    padding: 0;
-    background: #87CEEB;
-    overflow: hidden;
-    height: 100%;
-  }
-  canvas {
-    display: block;
-    margin: 0 auto;
-    background: #4CAF50;
-    border: 2px solid #000;
-  }
-  #ui {
-    position: absolute;
-    bottom: 20px;
-    width: 100%;
-    text-align: center;
-  }
-  #elixirBar {
-    width: 250px;
-    height: 18px;
-    background: #ccc;
-    border: 2px solid #333;
-    margin: 0 auto;
-    border-radius: 10px;
-    overflow: hidden;
-    position: relative;
-  }
-  #elixirFill {
-    width: 0%;
-    height: 100%;
-    background: purple;
-    transition: width 0.3s;
-  }
-  #elixirText {
-    color: white;
-    position: absolute;
-    top: -25px;
-    left: 50%;
-    transform: translateX(-50%);
-    font-weight: bold;
-    font-size: 18px;
-  }
-</style>
+  <meta charset="utf-8" />
+  <title>Clash-lite — Arena</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    /* --- layout --- */
+    html,body { height:100%; margin:0; font-family: Arial, Helvetica, sans-serif; background:#9aa0a6; }
+    #gameWrap { display:flex; align-items:center; justify-content:center; height:100vh; }
+    canvas { background: linear-gradient(#e6f7ff, #d9f0ff); /* subtle sky */ display:block; border-radius:10px; box-shadow:0 6px 20px rgba(0,0,0,0.25); }
+    /* bottom UI */
+    #ui {
+      position: absolute;
+      left:50%;
+      transform: translateX(-50%);
+      bottom:24px;
+      width:760px;
+      max-width:92vw;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      pointer-events:none;
+    }
+    .card-slot {
+      width:180px;
+      height:72px;
+      background:linear-gradient(#ffffff,#e9eef6);
+      border-radius:12px;
+      box-shadow:0 3px 8px rgba(0,0,0,0.15);
+      display:flex;
+      align-items:center;
+      justify-content:flex-start;
+      gap:12px;
+      padding:12px;
+      pointer-events:auto;
+      cursor:pointer;
+      transition:transform .12s ease;
+    }
+    .card-slot.selected { outline:3px solid #66b3ff; transform:translateY(-6px); }
+    .card-thumb { width:48px; height:48px; border-radius:6px; display:flex; align-items:center; justify-content:center; font-weight:bold; color:white; }
+    .card-info { display:flex; flex-direction:column; font-size:13px; color:#2b2b2b; }
+    .card-cost { font-weight:700; }
+    .disabled { opacity:0.45; pointer-events:none; filter:grayscale(60%); }
+    /* elixir bar */
+    #elixir {
+      width:220px;
+      background:rgba(0,0,0,0.06);
+      border-radius:12px;
+      padding:8px;
+      display:flex;
+      flex-direction:column;
+      gap:6px;
+      pointer-events:auto;
+    }
+    #elixir .bar {
+      height:14px;
+      background:linear-gradient(#2eb8ff,#006fbd);
+      border-radius:8px;
+      width:0%;
+      transition:width .25s linear;
+    }
+    #info {
+      position:absolute;
+      left:18px; top:18px;
+      background:rgba(255,255,255,0.85); padding:10px 12px; border-radius:10px; font-size:13px;
+    }
+    @media (max-width:700px){
+      .card-slot { width:calc(33vw - 20px); height:64px; padding:10px; }
+    }
+  </style>
 </head>
 <body>
-<canvas id="gameCanvas"></canvas>
-<div id="ui">
-  <div id="elixirBar">
-    <div id="elixirFill"></div>
-    <div id="elixirText">0</div>
+  <div id="gameWrap">
+    <canvas id="c" width="900" height="520"></canvas>
   </div>
-</div>
 
-<script>
-const canvas = document.getElementById("gameCanvas");
-const ctx = canvas.getContext("2d");
+  <!-- UI: 3 cards + elixir -->
+  <div id="ui">
+    <div id="cards" style="display:flex;gap:12px;">
+      <!-- JS will populate three cards here -->
+    </div>
+    <div id="elixir">
+      <div style="font-size:13px; color:#073b5c; font-weight:700; text-align:center;">Elixir <span id="elixirVal">0</span>/10</div>
+      <div style="background:rgba(0,0,0,0.08); border-radius:8px; height:16px;">
+        <div class="bar" id="elixirBar"></div>
+      </div>
+    </div>
+  </div>
 
-// Resize canvas to fill screen
-function resizeCanvas() {
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
-}
-resizeCanvas();
-window.addEventListener("resize", resizeCanvas);
+  <div id="info">Click a card then click the field to place it. Enemy will spawn automatically (limited).</div>
 
-// Map setup
-const baseWidth = 800;
-const baseHeight = 1200;
-let towers = [];
-let troops = [];
+  <script>
+  // -------------------------
+  // CONFIG
+  // -------------------------
+  const config = {
+    towerScale: 1.25,          // 25% larger towers
+    spawnCooldown: 3000,       // ms between enemy spawns
+    enemyActiveCap: 6,         // max concurrent enemy troops
+    speedMultiplier: 0.6,      // all troops slowed to 60% (40% slower)
+    elixirMax: 10,
+    elixirRegenMsPerPoint: 800, // ms per elixir
+    canvasW: 900, canvasH: 520,
+    water: { x: 0, y: 200, w: 900, h: 120 }, // water stripe across middle
+    bridge: { x: 360, w: 180 } // bridge horizontally centered across water
+  };
 
-// Scale factor for zooming out
-function getScale() {
-  // smaller factor = more zoomed out
-  return Math.min(canvas.width / baseWidth, canvas.height / baseHeight) * 0.7;
-}
+  // -------------------------
+  // SETUP
+  // -------------------------
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  canvas.width = config.canvasW;
+  canvas.height = config.canvasH;
 
-// Reset towers
-function resetTowers() {
-  towers = [
-    // Enemy
-    { x: baseWidth / 2, y: baseHeight * 0.08, hp: 5000, side: "enemy", main: true },
-    { x: baseWidth / 2 - 100, y: baseHeight * 0.18, hp: 2000, side: "enemy" },
-    { x: baseWidth / 2 + 100, y: baseHeight * 0.18, hp: 2000, side: "enemy" },
-    // Player
-    { x: baseWidth / 2, y: baseHeight * 0.92, hp: 5000, side: "player", main: true },
-    { x: baseWidth / 2 - 100, y: baseHeight * 0.82, hp: 2000, side: "player" },
-    { x: baseWidth / 2 + 100, y: baseHeight * 0.82, hp: 2000, side: "player" }
+  // arena bounds (playable field center area) - keeps the zoomed-out layout you already have
+  const arena = { x:60, y:40, w:780, h:440 };
+
+  // towers (player on bottom center-left/right; enemy top center-left/right)
+  const baseTowerSize = { w:48, h:64 };
+  const towerSize = { w: baseTowerSize.w * config.towerScale, h: baseTowerSize.h * config.towerScale };
+
+  const towers = [
+    // enemy towers (top)
+    { id:'enemy-left', team:'enemy', x:arena.x + 170, y: arena.y + 48, w: towerSize.w, h: towerSize.h, hp: 300 },
+    { id:'enemy-right', team:'enemy', x:arena.x + arena.w - 170, y: arena.y + 48, w: towerSize.w, h: towerSize.h, hp: 300 },
+    { id:'player-left', team:'player', x:arena.x + 170, y: arena.y + arena.h - 48 - towerSize.h, w:towerSize.w, h:towerSize.h, hp: 300 },
+    { id:'player-right', team:'player', x:arena.x + arena.w - 170, y: arena.y + arena.h - 48 - towerSize.h, w:towerSize.w, h:towerSize.h, hp: 300 },
   ];
-}
-resetTowers();
 
-// Elixir
-let elixir = 5, maxElixir = 10, elixirTimer = 0;
+  // simple unit list
+  const units = [];
+  let lastEnemySpawn = 0;
 
-// Spawn troop
-function spawnTroop(side, type, x, y) {
-  const stats = {
-    knight: { hp: 400, dmg: 60, speed: 1.6 },
-    giant: { hp: 1200, dmg: 25, speed: 1.0 }
-  }[type];
-  troops.push({ ...stats, side, type, x, y, maxHp: stats.hp, target: null });
-}
+  // UI: cards (3)
+  const cardDefs = [
+    { id:'knight', name:'Knight', cost: 3, hp:100, dmg:12, size:18, speed: 55 }, // speed px/sec base
+    { id:'archer', name:'Archer', cost: 2, hp:60, dmg:10, size:14, speed: 95 },
+    { id:'giant',  name:'Giant',  cost: 5, hp:200, dmg:18, size:26, speed: 42 }
+  ];
+  // We'll copy to deck (three available)
+  const deck = [ {...cardDefs[0]}, {...cardDefs[1]}, {...cardDefs[2]} ];
 
-// AI
-function aiLogic() {
-  if (Math.random() < 0.02) {
-    const laneX = Math.random() < 0.5 ? baseWidth * 0.35 : baseWidth * 0.65;
-    const troopType = Math.random() < 0.6 ? "knight" : "giant";
-    spawnTroop("enemy", troopType, laneX, baseHeight * 0.25);
+  // selected card index
+  let selectedCardIndex = null;
+
+  // elixir
+  let elixir = 0;
+  let lastElixirTick = performance.now();
+
+  // convenience: check if pos is water area
+  function isInWater(x,y) {
+    const w = config.water;
+    return x >= w.x && x <= (w.x + w.w) && y >= w.y && y <= (w.y + w.h);
   }
-}
-
-// Update logic
-function update(delta) {
-  elixirTimer += delta;
-  if (elixirTimer > 2.8) {
-    elixir = Math.min(maxElixir, elixir + 1);
-    elixirTimer = 0;
+  function isOnBridge(x,y) {
+    const b = config.bridge;
+    // bridge y centered within water
+    const byTop = config.water.y;
+    const byBottom = config.water.y + config.water.h;
+    const bxLeft = b.x;
+    const bxRight = b.x + b.w;
+    return x >= bxLeft && x <= bxRight && y >= byTop && y <= byBottom;
   }
 
-  troops.forEach(t => {
-    let enemies = troops.filter(e => e.side !== t.side);
-    let enemyTowers = towers.filter(e => e.side !== t.side);
-    let candidates = t.type === "giant" ? enemyTowers : enemies.concat(enemyTowers);
-    if (candidates.length === 0) return;
-    t.target = candidates.sort((a,b) => Math.hypot(a.x - t.x, a.y - t.y) - Math.hypot(b.x - t.x, b.y - t.y))[0];
-    let dx = t.target.x - t.x, dy = t.target.y - t.y, dist = Math.hypot(dx, dy);
-    if (dist > 20) {
-      t.x += (dx / dist) * t.speed;
-      t.y += (dy / dist) * t.speed;
+  // -------------------------
+  // DRAW
+  // -------------------------
+  function draw() {
+    // background outside field
+    ctx.fillStyle = '#bfbfc6'; // background
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+
+    // field (playable area) - greenish tone
+    ctx.fillStyle = '#cfeccf';
+    roundRect(ctx, arena.x, arena.y, arena.w, arena.h, 8, true, false);
+
+    // draw water
+    ctx.fillStyle = '#7cc6ff';
+    ctx.fillRect(config.water.x, config.water.y, config.water.w, config.water.h);
+
+    // draw bridge (a wooden stripe)
+    ctx.fillStyle = '#b48a4f';
+    ctx.fillRect(config.bridge.x, config.water.y, config.bridge.w, config.water.h);
+
+    // midfield dividing line
+    ctx.strokeStyle = 'rgba(0,0,0,0.08)';
+    ctx.beginPath();
+    ctx.moveTo(arena.x, arena.y + arena.h/2);
+    ctx.lineTo(arena.x + arena.w, arena.y + arena.h/2);
+    ctx.stroke();
+
+    // towers
+    for (let t of towers) {
+      drawTower(t);
+    }
+
+    // units
+    for (let u of units) {
+      drawUnit(u);
+    }
+
+    // draw selected placement preview (if any)
+    if (selectedCardIndex !== null) {
+      // preview follows mouse (we track mouse)
+      if (mousePos && mousePos.insideArena) {
+        const card = deck[selectedCardIndex];
+        ctx.globalAlpha = 0.9;
+        ctx.beginPath();
+        ctx.fillStyle = '#ffffff';
+        ctx.arc(mousePos.x, mousePos.y, card.size, 0, Math.PI*2);
+        ctx.fill();
+        // name badge
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = '#000';
+        ctx.font = '12px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(card.name, mousePos.x, mousePos.y - card.size - 8);
+      }
+    }
+
+    // HUD/overlays
+    // (cards and elixir are HTML elements; we update them separately)
+  }
+
+  // helper: rounded rect
+  function roundRect(ctx,x,y,w,h,r,fill,stroke){
+    if (typeof stroke === 'undefined') { stroke = true; }
+    if (typeof r === 'undefined') { r = 5; }
+    ctx.beginPath();
+    ctx.moveTo(x+r,y);
+    ctx.arcTo(x+w,y,x+w,y+h,r);
+    ctx.arcTo(x+w,y+h,x,y+h,r);
+    ctx.arcTo(x,y+h,x,y,r);
+    ctx.arcTo(x,y,x+w,y,r);
+    ctx.closePath();
+    if (fill) ctx.fill();
+    if (stroke) ctx.stroke();
+  }
+
+  function drawTower(t) {
+    // base shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.08)';
+    ctx.fillRect(t.x - 6, t.y + t.h - 6, t.w + 12, 12);
+
+    // tower body
+    ctx.fillStyle = t.team === 'player' ? '#8b5a2b' : '#6b2b2b';
+    ctx.fillRect(t.x, t.y, t.w, t.h);
+
+    // crown / flag
+    ctx.fillStyle = t.team === 'player' ? '#ffd54a' : '#ffd54a';
+    ctx.fillRect(t.x + t.w/2 - 8, t.y - 10, 16, 10);
+
+    // hp bar
+    const pct = Math.max(0, t.hp)/300;
+    ctx.fillStyle = 'rgba(0,0,0,0.15)';
+    ctx.fillRect(t.x, t.y - 12, t.w, 6);
+    ctx.fillStyle = pct > 0.5 ? '#4caf50' : (pct > 0.2 ? '#ffb74d' : '#e57373');
+    ctx.fillRect(t.x, t.y - 12, t.w * pct, 6);
+  }
+
+  function drawUnit(u) {
+    // simple circle with team color
+    ctx.beginPath();
+    ctx.fillStyle = u.team === 'player' ? '#2b9f49' : '#d64545';
+    ctx.arc(u.x, u.y, u.size, 0, Math.PI*2);
+    ctx.fill();
+    // hp ring
+    ctx.beginPath();
+    ctx.strokeStyle = 'rgba(0,0,0,0.12)';
+    ctx.arc(u.x, u.y, u.size+2, 0, Math.PI*2);
+    ctx.stroke();
+  }
+
+  // -------------------------
+  // GAME LOGIC
+  // -------------------------
+  let lastFrame = performance.now();
+  function gameLoop(now) {
+    const dt = (now - lastFrame) / 1000; // seconds
+    lastFrame = now;
+
+    // spawn enemy if allowed
+    if (now - lastEnemySpawn > config.spawnCooldown && countUnitsByTeam('enemy') < config.enemyActiveCap) {
+      spawnEnemy();
+      lastEnemySpawn = now;
+    }
+
+    // elixir regen
+    if (now - lastElixirTick >= config.elixirRegenMsPerPoint) {
+      const points = Math.floor((now - lastElixirTick) / config.elixirRegenMsPerPoint);
+      elixir = Math.min(config.elixirMax, elixir + points);
+      lastElixirTick += points * config.elixirRegenMsPerPoint;
+      updateElixirUI();
+      updateCardUI();
+    }
+
+    // move units
+    for (let i = units.length-1; i >= 0; i--) {
+      const u = units[i];
+      stepUnit(u, dt);
+      // simple lifetime / death check
+      if (u.hp <= 0) {
+        units.splice(i,1);
+      }
+    }
+
+    // collision / simple attack on towers (if near)
+    checkCombat(dt);
+
+    // render
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    draw();
+
+    requestAnimationFrame(gameLoop);
+  }
+
+  function spawnEnemy() {
+    // choose random enemy spawn near top edges
+    const side = Math.random() < 0.5 ? 'left' : 'right';
+    const x = side === 'left' ? arena.x + 110 : arena.x + arena.w - 110;
+    const y = arena.y + 24 + Math.random()*20;
+    const type = Math.random() < 0.6 ? cardDefs[0] : (Math.random() < 0.5 ? cardDefs[1] : cardDefs[2]);
+    const u = makeUnit({
+      team:'enemy',
+      x, y,
+      target: { x: arena.x + arena.w/2, y: arena.y + arena.h - 80 }, // head toward player's center
+      size: type.size,
+      hp: type.hp,
+      dmg: type.dmg,
+      baseSpeed: type.speed
+    });
+    units.push(u);
+  }
+
+  function makeUnit(opts) {
+    return {
+      id: Math.random().toString(36).slice(2,9),
+      team: opts.team,
+      x: opts.x, y: opts.y,
+      size: opts.size,
+      hp: opts.hp,
+      dmg: opts.dmg,
+      baseSpeed: opts.baseSpeed,
+      target: opts.target,
+      state: 'advance',
+      originalTarget: opts.target ? { x: opts.target.x, y: opts.target.y } : null,
+      // if we need to go to bridge first, we set waypoint
+      waypoint: null
+    };
+  }
+
+  function stepUnit(u, dt) {
+    const sp = u.baseSpeed * config.speedMultiplier; // px / sec
+    // determine goal: if goal would cross water and not on bridge, steer to bridge x
+    // only prevents crossing: if unit would step into water and not on bridge, go to nearest bridge edge
+    const next = moveTowards(u.x, u.y, (u.waypoint||u.target).x, (u.waypoint||u.target).y, sp * dt);
+    // if next step would be in water but not on bridge:
+    if (isInWater(next.x, next.y) && !isOnBridge(next.x, next.y)) {
+      // set waypoint to bridge entry (closest bridge x on same side)
+      const bxCenter = config.bridge.x + config.bridge.w/2;
+      const entryY = (u.team === 'player') ? (config.water.y + config.water.h + 20) : (config.water.y - 20);
+      // choose approach x near center of bridge
+      const wp = { x: bxCenter, y: entryY };
+      u.waypoint = wp;
+      // move toward waypoint instead
+      const next2 = moveTowards(u.x, u.y, wp.x, wp.y, sp * dt);
+      u.x = next2.x; u.y = next2.y;
+      // once on bridge, clear waypoint to resume original target
+      if (isOnBridge(u.x, u.y)) {
+        u.waypoint = null;
+      }
     } else {
-      t.target.hp -= t.dmg * delta * 0.5;
+      u.x = next.x; u.y = next.y;
+    }
+  }
+
+  function moveTowards(x,y,tx,ty,dist) {
+    const dx = tx - x, dy = ty - y;
+    const len = Math.hypot(dx,dy);
+    if (len <= dist || len === 0) return { x: tx, y: ty };
+    return { x: x + dx/len * dist, y: y + dy/len * dist };
+  }
+
+  function checkCombat(dt) {
+    // units near towers damage them over time
+    for (let u of units) {
+      // check target towers
+      for (let t of towers) {
+        // don't attack own towers
+        if ((u.team === 'player' && t.team === 'player') || (u.team === 'enemy' && t.team === 'enemy')) continue;
+        const dx = t.x + t.w/2 - u.x;
+        const dy = t.y + t.h/2 - u.y;
+        const dist = Math.hypot(dx,dy);
+        if (dist < 36 + u.size) {
+          // attack
+          t.hp -= u.dmg * dt; // damage per second scaled by dt (simple)
+          u.hp -= 6 * dt; // tower hits back slowly
+        }
+      }
+    }
+  }
+
+  function countUnitsByTeam(team) {
+    return units.filter(u => u.team === team).length;
+  }
+
+  // -------------------------
+  // INPUT & UI wiring
+  // -------------------------
+  // Build the 3 card HTML elements
+  const cardsDiv = document.getElementById('cards');
+  function buildCardUI() {
+    cardsDiv.innerHTML = '';
+    deck.forEach((card, idx) => {
+      const slot = document.createElement('div');
+      slot.className = 'card-slot';
+      slot.dataset.index = idx;
+      slot.innerHTML = `
+        <div class="card-thumb" style="background:${idx===0? '#4caf50': idx===1? '#2196f3' : '#795548'}">${card.name[0]}</div>
+        <div class="card-info">
+          <div style="font-weight:700">${card.name}</div>
+          <div class="card-cost">Cost: <span>${card.cost}</span></div>
+        </div>
+      `;
+      slot.addEventListener('click', (e) => {
+        // select / unselect
+        const i = Number(slot.dataset.index);
+        if (selectedCardIndex === i) {
+          selectedCardIndex = null;
+        } else {
+          selectedCardIndex = i;
+        }
+        updateCardSelectionUI();
+        e.stopPropagation();
+      });
+      cardsDiv.appendChild(slot);
+    });
+    updateCardUI();
+  }
+
+  function updateCardSelectionUI() {
+    Array.from(cardsDiv.children).forEach((el, i) => {
+      el.classList.toggle('selected', selectedCardIndex === i);
+    });
+  }
+
+  function updateCardUI() {
+    Array.from(cardsDiv.children).forEach((el, i) => {
+      const cost = deck[i].cost;
+      if (elixir < cost) el.classList.add('disabled'); else el.classList.remove('disabled');
+    });
+    updateCardSelectionUI();
+  }
+
+  // elixir UI
+  const elBar = document.getElementById('elixirBar');
+  const elVal = document.getElementById('elixirVal');
+  function updateElixirUI() {
+    elVal.textContent = Math.floor(elixir);
+    const pct = (elixir / config.elixirMax) * 100;
+    elBar.style.width = pct + '%';
+  }
+
+  // mouse handling: place card on arena click
+  const mousePos = { x:0, y:0, insideArena:false };
+  canvas.addEventListener('mousemove', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left) * (canvas.width / rect.width);
+    const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+    mousePos.x = x; mousePos.y = y;
+    mousePos.insideArena = x >= arena.x && x <= arena.x+arena.w && y >= arena.y && y <= arena.y+arena.h;
+  });
+  canvas.addEventListener('mouseleave', () => { mousePos.insideArena = false; });
+  canvas.addEventListener('click', (e) => {
+    // place card if selected and enough elixir
+    if (selectedCardIndex === null) return;
+    if (!mousePos.insideArena) return;
+
+    const card = deck[selectedCardIndex];
+    if (elixir < card.cost) {
+      // not enough elixir
+      selectedCardIndex = null;
+      updateCardSelectionUI();
+      return;
+    }
+    // place unit for player
+    const unit = makeUnit({
+      team: 'player',
+      x: mousePos.x,
+      y: mousePos.y,
+      target: { x: arena.x + arena.w/2, y: arena.y + 20 }, // head toward enemy side by default
+      size: card.size,
+      hp: card.hp,
+      dmg: card.dmg,
+      baseSpeed: card.speed
+    });
+    // ensure player cannot place on water: snap to nearest bridge if attempting to place on water
+    if (isInWater(unit.x, unit.y) && !isOnBridge(unit.x, unit.y)) {
+      unit.x = config.bridge.x + config.bridge.w / 2;
+      // if placing from bottom half, place on bottom bridge edge
+      if (unit.team === 'player') unit.y = config.water.y + config.water.h + 22;
+      else unit.y = config.water.y - 22;
+    }
+    units.push(unit);
+    elixir -= card.cost;
+    updateElixirUI();
+    updateCardUI();
+    // deselect after placement
+    selectedCardIndex = null;
+    updateCardSelectionUI();
+  });
+
+  // clicking anywhere else clears card selection
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.card-slot')) {
+      selectedCardIndex = null;
+      updateCardSelectionUI();
     }
   });
 
-  troops = troops.filter(t => t.hp > 0);
-  towers = towers.filter(t => t.hp > 0);
-}
-
-// Draw function
-function draw() {
-  const scale = getScale();
-  ctx.save();
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  ctx.translate(canvas.width / 2, canvas.height / 2);
-  ctx.scale(scale, scale);
-  ctx.translate(-baseWidth / 2, -baseHeight / 2);
-
-  // Field
-  ctx.fillStyle = "#4CAF50";
-  ctx.fillRect(0, 0, baseWidth, baseHeight);
-
-  // River
-  const riverY = baseHeight / 2;
-  ctx.fillStyle = "#1E90FF";
-  ctx.fillRect(0, riverY - 20, baseWidth, 40);
-
-  // Bridges
-  ctx.fillStyle = "#8B4513";
-  ctx.fillRect(baseWidth * 0.25 - 40, riverY - 8, 80, 16);
-  ctx.fillRect(baseWidth * 0.75 - 40, riverY - 8, 80, 16);
-
-  // Towers
-  towers.forEach(t => {
-    ctx.fillStyle = t.side === "player" ? "#0000FF" : "#FF0000";
-    ctx.fillRect(t.x - 15, t.y - 30, 30, 30);
-    ctx.fillStyle = "white";
-    ctx.font = "10px Arial";
-    ctx.fillText(Math.floor(t.hp), t.x - 15, t.y - 35);
+  // allow keyboard 1/2/3 to select cards
+  document.addEventListener('keydown', (e) => {
+    if (e.key === '1') toggleSelect(0);
+    if (e.key === '2') toggleSelect(1);
+    if (e.key === '3') toggleSelect(2);
   });
-
-  // Troops
-  troops.forEach(t => {
-    ctx.fillStyle = t.side === "player" ? "#2222FF" : "#FF2222";
-    if (t.type === "giant") ctx.fillStyle = "#DAA520";
-    ctx.beginPath();
-    ctx.arc(t.x, t.y, 10, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = "red";
-    ctx.fillRect(t.x - 10, t.y - 18, 20, 3);
-    ctx.fillStyle = "lime";
-    ctx.fillRect(t.x - 10, t.y - 18, 20 * (t.hp / t.maxHp), 3);
-  });
-
-  ctx.restore();
-}
-
-// Main loop
-let last = 0;
-function loop(ts) {
-  const delta = (ts - last) / 1000;
-  last = ts;
-  aiLogic();
-  update(delta);
-  draw();
-  document.getElementById("elixirFill").style.width = (elixir / maxElixir) * 100 + "%";
-  document.getElementById("elixirText").innerText = Math.floor(elixir);
-  requestAnimationFrame(loop);
-}
-
-canvas.addEventListener("click", e => {
-  const rect = canvas.getBoundingClientRect();
-  const scale = getScale();
-  const x = (e.clientX - rect.left - canvas.width / 2) / scale + baseWidth / 2;
-  const y = (e.clientY - rect.top - canvas.height / 2) / scale + baseHeight / 2;
-  if (elixir >= 5) {
-    spawnTroop("player", Math.random() < 0.5 ? "knight" : "giant", x, y);
-    elixir -= 5;
+  function toggleSelect(i) {
+    if (selectedCardIndex === i) selectedCardIndex = null;
+    else selectedCardIndex = i;
+    updateCardSelectionUI();
   }
-});
 
-requestAnimationFrame(loop);
-</script>
+  // init UI
+  buildCardUI();
+  updateElixirUI();
+
+  // start loop
+  requestAnimationFrame(gameLoop);
+
+  // -------------------------
+  // utility & debug
+  // -------------------------
+  // simple function to spawn a player unit for testing
+  window.debugSpawnPlayer = function() {
+    const card = cardDefs[Math.floor(Math.random()*cardDefs.length)];
+    units.push(makeUnit({
+      team:'player', x: arena.x + arena.w/2, y: arena.y + arena.h - 40,
+      target: {x: arena.x + arena.w/2, y: arena.y + 30},
+      size: card.size, hp: card.hp, dmg:card.dmg, baseSpeed: card.speed
+    }));
+  };
+
+  // expose variables for quick tweaking in console
+  window.game = { config, units, towers, deck, cardDefs };
+
+  </script>
 </body>
 </html>
