@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Clash Royale Lite</title>
+<title>Clash Royale Lite (Full View)</title>
 <style>
   html, body {
     margin: 0;
@@ -64,93 +64,77 @@
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
-// Automatically scale to screen
+// Resize canvas to fill screen
 function resizeCanvas() {
-  canvas.width = window.innerWidth * 0.9;
-  canvas.height = window.innerHeight * 0.9;
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
 }
 resizeCanvas();
 window.addEventListener("resize", resizeCanvas);
 
-// Map layout
-const map = {
-  get width() { return canvas.width; },
-  get height() { return canvas.height; },
-  get riverY() { return this.height / 2; }
-};
-
-// Tower setup
+// Map setup
+const baseWidth = 800;
+const baseHeight = 1200;
 let towers = [];
+let troops = [];
 
+// Scale factor for zooming out
+function getScale() {
+  // smaller factor = more zoomed out
+  return Math.min(canvas.width / baseWidth, canvas.height / baseHeight) * 0.7;
+}
+
+// Reset towers
 function resetTowers() {
-  const w = map.width, h = map.height;
   towers = [
-    // AI towers
-    { x: w / 2, y: h * 0.08, hp: 5000, side: "enemy", main: true },
-    { x: w / 2 - 100, y: h * 0.18, hp: 2000, side: "enemy" },
-    { x: w / 2 + 100, y: h * 0.18, hp: 2000, side: "enemy" },
-    // Player towers
-    { x: w / 2, y: h * 0.92, hp: 5000, side: "player", main: true },
-    { x: w / 2 - 100, y: h * 0.82, hp: 2000, side: "player" },
-    { x: w / 2 + 100, y: h * 0.82, hp: 2000, side: "player" }
+    // Enemy
+    { x: baseWidth / 2, y: baseHeight * 0.08, hp: 5000, side: "enemy", main: true },
+    { x: baseWidth / 2 - 100, y: baseHeight * 0.18, hp: 2000, side: "enemy" },
+    { x: baseWidth / 2 + 100, y: baseHeight * 0.18, hp: 2000, side: "enemy" },
+    // Player
+    { x: baseWidth / 2, y: baseHeight * 0.92, hp: 5000, side: "player", main: true },
+    { x: baseWidth / 2 - 100, y: baseHeight * 0.82, hp: 2000, side: "player" },
+    { x: baseWidth / 2 + 100, y: baseHeight * 0.82, hp: 2000, side: "player" }
   ];
 }
 resetTowers();
 
-// Elixir system
-let elixir = 5;
-let maxElixir = 10;
-let elixirTimer = 0;
+// Elixir
+let elixir = 5, maxElixir = 10, elixirTimer = 0;
 
-// Troops
-let troops = [];
-
+// Spawn troop
 function spawnTroop(side, type, x, y) {
-  let stats = {
+  const stats = {
     knight: { hp: 400, dmg: 60, speed: 1.6 },
-    giant: { hp: 1200, dmg: 25, speed: 1.0 },
-    archer: { hp: 200, dmg: 40, speed: 1.8 }
+    giant: { hp: 1200, dmg: 25, speed: 1.0 }
   }[type];
-  troops.push({ ...stats, type, side, x, y, maxHp: stats.hp, target: null });
+  troops.push({ ...stats, side, type, x, y, maxHp: stats.hp, target: null });
 }
 
-// AI logic
+// AI
 function aiLogic() {
   if (Math.random() < 0.02) {
-    const laneX = Math.random() < 0.5 ? map.width * 0.35 : map.width * 0.65;
+    const laneX = Math.random() < 0.5 ? baseWidth * 0.35 : baseWidth * 0.65;
     const troopType = Math.random() < 0.6 ? "knight" : "giant";
-    spawnTroop("enemy", troopType, laneX, map.height * 0.25);
+    spawnTroop("enemy", troopType, laneX, baseHeight * 0.25);
   }
 }
 
+// Update logic
 function update(delta) {
-  // Elixir regen
   elixirTimer += delta;
   if (elixirTimer > 2.8) {
     elixir = Math.min(maxElixir, elixir + 1);
     elixirTimer = 0;
   }
 
-  // Troop AI
   troops.forEach(t => {
     let enemies = troops.filter(e => e.side !== t.side);
     let enemyTowers = towers.filter(e => e.side !== t.side);
     let candidates = t.type === "giant" ? enemyTowers : enemies.concat(enemyTowers);
+    if (candidates.length === 0) return;
     t.target = candidates.sort((a,b) => Math.hypot(a.x - t.x, a.y - t.y) - Math.hypot(b.x - t.x, b.y - t.y))[0];
-    if (!t.target) return;
-
-    let dx = t.target.x - t.x;
-    let dy = t.target.y - t.y;
-    let dist = Math.hypot(dx, dy);
-
-    // Avoid river unless near bridges
-    const river = map.riverY;
-    const nearBridge = (Math.abs(t.x - map.width * 0.25) < 60 || Math.abs(t.x - map.width * 0.75) < 60);
-    if ((t.y < river - 25 && t.target.y > river + 25) ||
-        (t.y > river + 25 && t.target.y < river - 25)) {
-      if (!nearBridge) return;
-    }
-
+    let dx = t.target.x - t.x, dy = t.target.y - t.y, dist = Math.hypot(dx, dy);
     if (dist > 20) {
       t.x += (dx / dist) * t.speed;
       t.y += (dy / dist) * t.speed;
@@ -163,20 +147,29 @@ function update(delta) {
   towers = towers.filter(t => t.hp > 0);
 }
 
+// Draw function
 function draw() {
-  const w = map.width, h = map.height, riverY = map.riverY;
+  const scale = getScale();
+  ctx.save();
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  ctx.translate(canvas.width / 2, canvas.height / 2);
+  ctx.scale(scale, scale);
+  ctx.translate(-baseWidth / 2, -baseHeight / 2);
 
   // Field
-  ctx.clearRect(0, 0, w, h);
   ctx.fillStyle = "#4CAF50";
-  ctx.fillRect(0, 0, w, h);
+  ctx.fillRect(0, 0, baseWidth, baseHeight);
+
   // River
+  const riverY = baseHeight / 2;
   ctx.fillStyle = "#1E90FF";
-  ctx.fillRect(0, riverY - 20, w, 40);
+  ctx.fillRect(0, riverY - 20, baseWidth, 40);
+
   // Bridges
   ctx.fillStyle = "#8B4513";
-  ctx.fillRect(w * 0.25 - 40, riverY - 8, 80, 16);
-  ctx.fillRect(w * 0.75 - 40, riverY - 8, 80, 16);
+  ctx.fillRect(baseWidth * 0.25 - 40, riverY - 8, 80, 16);
+  ctx.fillRect(baseWidth * 0.75 - 40, riverY - 8, 80, 16);
 
   // Towers
   towers.forEach(t => {
@@ -194,15 +187,17 @@ function draw() {
     ctx.beginPath();
     ctx.arc(t.x, t.y, 10, 0, Math.PI * 2);
     ctx.fill();
-    // HP bar
+
     ctx.fillStyle = "red";
     ctx.fillRect(t.x - 10, t.y - 18, 20, 3);
     ctx.fillStyle = "lime";
     ctx.fillRect(t.x - 10, t.y - 18, 20 * (t.hp / t.maxHp), 3);
   });
+
+  ctx.restore();
 }
 
-// Game loop
+// Main loop
 let last = 0;
 function loop(ts) {
   const delta = (ts - last) / 1000;
@@ -216,8 +211,12 @@ function loop(ts) {
 }
 
 canvas.addEventListener("click", e => {
+  const rect = canvas.getBoundingClientRect();
+  const scale = getScale();
+  const x = (e.clientX - rect.left - canvas.width / 2) / scale + baseWidth / 2;
+  const y = (e.clientY - rect.top - canvas.height / 2) / scale + baseHeight / 2;
   if (elixir >= 5) {
-    spawnTroop("player", Math.random() < 0.5 ? "knight" : "giant", e.offsetX, e.offsetY);
+    spawnTroop("player", Math.random() < 0.5 ? "knight" : "giant", x, y);
     elixir -= 5;
   }
 });
