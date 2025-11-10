@@ -1,131 +1,133 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<title>Clash-lite Arena</title>
-<meta name="viewport" content="width=device-width,initial-scale=1" />
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Clash Royale Lite Replica Arena</title>
 <style>
-html,body {height:100%; margin:0; font-family: Arial, Helvetica, sans-serif; background:#9aa0a6;}
-#gameWrap { display:flex; align-items:center; justify-content:center; height:100vh; }
-canvas { background: linear-gradient(#e6f7ff, #d9f0ff); display:block; border-radius:10px; box-shadow:0 6px 20px rgba(0,0,0,0.25);}
-#ui {position:absolute; left:50%; transform:translateX(-50%); bottom:24px; width:760px; max-width:92vw; display:flex; align-items:center; justify-content:space-between; gap:12px; pointer-events:none;}
-.card-slot {width:180px; height:72px; background:linear-gradient(#ffffff,#e9eef6); border-radius:12px; box-shadow:0 3px 8px rgba(0,0,0,0.15); display:flex; align-items:center; justify-content:flex-start; gap:12px; padding:12px; pointer-events:auto; cursor:pointer; transition:transform .12s ease;}
-.card-slot.selected {outline:3px solid #66b3ff; transform:translateY(-6px);}
-.card-thumb { width:48px; height:48px; border-radius:6px; display:flex; align-items:center; justify-content:center; font-weight:bold; color:white; }
-.card-info { display:flex; flex-direction:column; font-size:13px; color:#2b2b2b; }
-.card-cost { font-weight:700; }
-.disabled { opacity:0.45; pointer-events:none; filter:grayscale(60%); }
-#elixir { width:220px; background:rgba(0,0,0,0.06); border-radius:12px; padding:8px; display:flex; flex-direction:column; gap:6px; pointer-events:auto; }
-#elixir .bar { height:14px; background:linear-gradient(#2eb8ff,#006fbd); border-radius:8px; width:0%; transition:width .25s linear; }
-#info { position:absolute; left:18px; top:18px; background:rgba(255,255,255,0.85); padding:10px 12px; border-radius:10px; font-size:13px; }
+html,body {margin:0; padding:0; height:100%; background:#9aa0a6; font-family:Arial,sans-serif;}
+#gameWrap {display:flex; justify-content:center; align-items:center; height:100vh;}
+canvas {border-radius:10px; box-shadow:0 6px 20px rgba(0,0,0,0.25);}
+#ui {position:absolute; bottom:20px; left:50%; transform:translateX(-50%); display:flex; gap:12px;}
+.card-slot {width:100px; height:64px; background:#fff; border-radius:10px; display:flex; align-items:center; justify-content:flex-start; gap:8px; padding:8px; cursor:pointer;}
+.card-slot.selected {outline:3px solid #66b3ff;}
+.card-thumb {width:40px; height:40px; border-radius:6px; display:flex; align-items:center; justify-content:center; color:white; font-weight:bold;}
+.card-info {display:flex; flex-direction:column; font-size:12px;}
+.card-cost {font-weight:700;}
+.disabled {opacity:0.5; pointer-events:none;}
+#elixir {width:180px; background:rgba(0,0,0,0.1); border-radius:8px; padding:6px;}
+#elixir .bar {height:12px; border-radius:6px; background:linear-gradient(#2eb8ff,#006fbd); width:0%; transition:width 0.25s;}
+#elixirVal {font-weight:bold; text-align:center; display:block;}
 </style>
 </head>
 <body>
 <div id="gameWrap">
-  <canvas id="c" width="540" height="960"></canvas>
+<canvas id="c" width="540" height="960"></canvas>
 </div>
 <div id="ui">
-  <div id="cards" style="display:flex;gap:12px;"></div>
+  <div id="cards"></div>
   <div id="elixir">
-    <div style="font-size:13px; color:#073b5c; font-weight:700; text-align:center;">Elixir <span id="elixirVal">0</span>/10</div>
-    <div style="background:rgba(0,0,0,0.08); border-radius:8px; height:16px;">
+    <span id="elixirVal">0/10</span>
+    <div style="background:rgba(0,0,0,0.08); border-radius:6px; height:14px;">
       <div class="bar" id="elixirBar"></div>
     </div>
   </div>
 </div>
-<div id="info">Click a card then click the field to place it. Enemy spawns automatically (limited). Units attack enemies, then towers.</div>
 
 <script>
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
-const arena = { x:40, y:40, w:460, h:880 };
 
-const water = { y:arena.y + arena.h/2 - 80, h:160 };
+const arena = {x:20, y:20, w:500, h:920}; // Arena boundaries
+const water = {y:arena.y + arena.h/2 - 80, h:160}; // Central river
 const bridgeW = 120;
 
-// Towers
-const towerW = 48, towerH = 64;
 const towers = [
-  {id:'enemy-left',team:'enemy',x:arena.x + 60, y:arena.y+40, w:towerW,h:towerH, hp:300},
-  {id:'enemy-right',team:'enemy',x:arena.x + arena.w - 60 - towerW, y:arena.y+40, w:towerW,h:towerH, hp:300},
-  {id:'player-left',team:'player',x:arena.x + 60, y:arena.y + arena.h - 40 - towerH, w:towerW,h:towerH, hp:300},
-  {id:'player-right',team:'player',x:arena.x + arena.w - 60 - towerW, y:arena.y + arena.h - 40 - towerH, w:towerW,h:towerH, hp:300}
+  {team:'enemy', x:arena.x+60, y:arena.y+50, w:48, h:64, hp:300},
+  {team:'enemy', x:arena.x+arena.w-108, y:arena.y+50, w:48, h:64, hp:300},
+  {team:'player', x:arena.x+60, y:arena.y+arena.h-114, w:48, h:64, hp:300},
+  {team:'player', x:arena.x+arena.w-108, y:arena.y+arena.h-114, w:48, h:64, hp:300}
 ];
 
-// Units
 const units = [];
-let elixir = 0, lastElixirTick = performance.now();
-const elMax = 10, elRegenMs = 2800;
+let elixir=0, lastElixirTick=performance.now(), elMax=10, elRegenMs=2800;
 
 const cardDefs = [
-  { id:'knight', name:'Knight', cost:3, hp:100, dmg:12, size:18, speed:55 },
-  { id:'archer', name:'Archer', cost:2, hp:60, dmg:10, size:14, speed:95 },
-  { id:'giant', name:'Giant', cost:5, hp:200, dmg:18, size:26, speed:42 }
+  {id:'knight', name:'Knight', cost:3, hp:100, dmg:12, size:18, speed:55},
+  {id:'archer', name:'Archer', cost:2, hp:60, dmg:10, size:14, speed:95},
+  {id:'giant', name:'Giant', cost:5, hp:200, dmg:18, size:26, speed:42}
 ];
 const deck = [...cardDefs];
 let selectedCardIndex = null;
 
-// Mouse
-const mousePos = { x:0, y:0, insideArena:false };
-canvas.addEventListener('mousemove',(e)=>{ const r=canvas.getBoundingClientRect(); mousePos.x=(e.clientX-r.left)*(canvas.width/r.width); mousePos.y=(e.clientY-r.top)*(canvas.height/r.height); mousePos.insideArena = mousePos.x>=arena.x && mousePos.x<=arena.x+arena.w && mousePos.y>=arena.y && mousePos.y<=arena.y+arena.h; });
-canvas.addEventListener('mouseleave',()=>{mousePos.insideArena=false;});
-
-canvas.addEventListener('click',(e)=>{
+// Mouse tracking
+const mousePos = {x:0,y:0,insideArena:false};
+canvas.addEventListener('mousemove',(e)=>{
+  const rect = canvas.getBoundingClientRect();
+  mousePos.x = (e.clientX-rect.left)*(canvas.width/rect.width);
+  mousePos.y = (e.clientY-rect.top)*(canvas.height/rect.height);
+  mousePos.insideArena = mousePos.x>=arena.x && mousePos.x<=arena.x+arena.w && mousePos.y>=arena.y && mousePos.y<=arena.y+arena.h;
+});
+canvas.addEventListener('mouseleave',()=>mousePos.insideArena=false);
+canvas.addEventListener('click',()=>{
   if(selectedCardIndex===null || !mousePos.insideArena) return;
   const card = deck[selectedCardIndex];
   if(elixir<card.cost){ selectedCardIndex=null; updateCardUI(); return; }
-  const lane = mousePos.x<arena.x+arena.w/2?'left':'right';
-  const unit = {team:'player', x:mousePos.x, y:mousePos.y, size:card.size, hp:card.hp, dmg:card.dmg, speed:card.speed, lane};
-  units.push(unit);
+  const lane = mousePos.x < arena.x + arena.w/2 ? 'left':'right';
+  units.push({team:'player', x:mousePos.x, y:mousePos.y, size:card.size, hp:card.hp, dmg:card.dmg, speed:card.speed, lane});
   elixir -= card.cost; updateElixirUI(); updateCardUI(); selectedCardIndex=null; updateCardUI();
 });
 
-// Draw arena
+// Draw arena exactly like Clash Royale
 function drawArena() {
-  ctx.fillStyle = '#bfbfc6'; ctx.fillRect(0,0,canvas.width,canvas.height);
-  ctx.fillStyle = '#cfeccf'; ctx.fillRect(arena.x,arena.y,arena.w,arena.h);
-  ctx.fillStyle = '#7cc6ff'; ctx.fillRect(arena.x,water.y,arena.w,water.h);
-  // bridges
-  ctx.fillStyle = '#b48a4f';
+  // Grass
+  ctx.fillStyle='#cfeccf'; ctx.fillRect(arena.x,arena.y,arena.w,arena.h);
+  // River
+  ctx.fillStyle='#7cc6ff'; ctx.fillRect(arena.x,water.y,arena.w,water.h);
+  // Bridges
+  ctx.fillStyle='#b48a4f';
   ctx.fillRect(arena.x+60,water.y,bridgeW,water.h);
   ctx.fillRect(arena.x+arena.w-60-bridgeW,water.y,bridgeW,water.h);
+  // Mid lane line
+  ctx.strokeStyle='rgba(0,0,0,0.1)'; ctx.beginPath();
+  ctx.moveTo(arena.x,arena.y+arena.h/2); ctx.lineTo(arena.x+arena.w,arena.y+arena.h/2); ctx.stroke();
 }
 
 // Draw towers
-function drawTowers() {
-  for(let t of towers){
-    ctx.fillStyle = t.team==='player'?'#8b5a2b':'#6b2b2b';
+function drawTowers(){
+  for(const t of towers){
+    ctx.fillStyle=t.team==='player'?'#8b5a2b':'#6b2b2b';
     ctx.fillRect(t.x,t.y,t.w,t.h);
-    const pct=t.hp/300; ctx.fillStyle='#4caf50'; ctx.fillRect(t.x,t.y-6,t.w*pct,4);
+    const pct=t.hp/300;
+    ctx.fillStyle='#4caf50'; ctx.fillRect(t.x,t.y-6,t.w*pct,4);
   }
 }
 
 // Draw units
-function drawUnits() {
-  for(let u of units){
-    ctx.beginPath(); ctx.fillStyle=u.team==='player'?'#2b9f49':'#d64545';
+function drawUnits(){
+  for(const u of units){
+    ctx.beginPath();
+    ctx.fillStyle=u.team==='player'?'#2b9f49':'#d64545';
     ctx.arc(u.x,u.y,u.size,0,Math.PI*2); ctx.fill();
   }
 }
 
+// Game loop
 function gameLoop(now){
-  // Elixir
   if(now-lastElixirTick>=elRegenMs){
     const points=Math.floor((now-lastElixirTick)/elRegenMs);
-    elixir=Math.min(elMax,elixir+points);
-    lastElixirTick+=points*elRegenMs;
+    elixir=Math.min(elMax,elixir+points); lastElixirTick+=points*elRegenMs;
     updateElixirUI();
   }
-
   ctx.clearRect(0,0,canvas.width,canvas.height);
   drawArena(); drawTowers(); drawUnits();
   requestAnimationFrame(gameLoop);
 }
 
-function updateElixirUI(){
-  document.getElementById('elixirVal').textContent = elixir;
-  document.getElementById('elixirBar').style.width = (elixir/elMax*100)+'%';
-}
+// Elixir UI
+const elBar = document.getElementById('elixirBar');
+const elVal = document.getElementById('elixirVal');
+function updateElixirUI(){ elVal.textContent = elixir + '/10'; elBar.style.width = (elixir/elMax*100)+'%'; }
 
 // Card UI
 const cardsDiv = document.getElementById('cards');
@@ -136,7 +138,6 @@ deck.forEach((c,i)=>{
   slot.addEventListener('click',()=>{ selectedCardIndex = selectedCardIndex===i?null:i; updateCardUI(); });
   cardsDiv.appendChild(slot);
 });
-
 function updateCardUI(){
   Array.from(cardsDiv.children).forEach((el,i)=>{
     const cost=deck[i].cost; el.classList.toggle('disabled',elixir<cost);
