@@ -12,8 +12,9 @@
   }
   canvas {
     display: block;
-    margin: auto;
+    margin: 0 auto;
     background: #4caf50;
+    border: 3px solid #333;
   }
   .ui {
     position: absolute;
@@ -24,13 +25,14 @@
     gap: 10px;
   }
   .card {
-    width: 80px;
-    height: 100px;
+    width: 70px;
+    height: 90px;
     background: #ddd;
     border-radius: 10px;
     border: 2px solid #333;
     text-align: center;
     font-family: sans-serif;
+    font-size: 14px;
     cursor: pointer;
     user-select: none;
   }
@@ -38,31 +40,40 @@
     border-color: gold;
     background: #fff6a8;
   }
-  .elixir {
+  .elixir-container {
     position: absolute;
-    bottom: 120px;
+    bottom: 110px;
     left: 50%;
     transform: translateX(-50%);
-    width: 300px;
-    height: 20px;
-    border: 2px solid #222;
+    text-align: center;
+    font-family: sans-serif;
+    color: white;
+  }
+  .elixir {
+    width: 250px;
+    height: 18px;
+    border: 2px solid #fff;
     border-radius: 10px;
-    background: #ccc;
+    background: #555;
     overflow: hidden;
+    margin-top: 4px;
   }
   .elixir-fill {
     height: 100%;
     background: purple;
     width: 0%;
-    transition: width 0.5s linear;
+    transition: width 0.4s linear;
   }
 </style>
 </head>
 <body>
-<canvas id="game" width="600" height="900"></canvas>
+<canvas id="game" width="450" height="700"></canvas>
 
-<div class="elixir">
-  <div class="elixir-fill" id="elixirFill"></div>
+<div class="elixir-container">
+  <div id="elixirText">Elixir: 10</div>
+  <div class="elixir">
+    <div class="elixir-fill" id="elixirFill"></div>
+  </div>
 </div>
 
 <div class="ui">
@@ -78,31 +89,27 @@ const ctx = canvas.getContext('2d');
 const WIDTH = canvas.width;
 const HEIGHT = canvas.height;
 
-// map zones
-const riverY = HEIGHT / 2 - 30;
-const bridgeWidth = 80;
+const riverY = HEIGHT / 2 - 25;
+const bridgeWidth = 70;
 
-// game state
 let troops = [];
 let aiTroops = [];
 let elixir = 10;
 let selectedCard = null;
 let lastElixirTime = Date.now();
 
-// tower objects
 const towers = {
-  playerKing: {x: WIDTH/2 - 25, y: HEIGHT - 100, w: 50, h: 50, hp: 5000},
-  playerLeft: {x: WIDTH/2 - 150, y: HEIGHT - 200, w: 40, h: 40, hp: 2000},
-  playerRight: {x: WIDTH/2 + 110, y: HEIGHT - 200, w: 40, h: 40, hp: 2000},
-  enemyKing: {x: WIDTH/2 - 25, y: 50, w: 50, h: 50, hp: 5000},
-  enemyLeft: {x: WIDTH/2 - 150, y: 150, w: 40, h: 40, hp: 2000},
-  enemyRight: {x: WIDTH/2 + 110, y: 150, w: 40, h: 40, hp: 2000},
+  playerKing: {x: WIDTH/2 - 25, y: HEIGHT - 80, w: 50, h: 50, hp: 5000},
+  playerLeft: {x: WIDTH/2 - 120, y: HEIGHT - 160, w: 35, h: 35, hp: 2000},
+  playerRight: {x: WIDTH/2 + 85, y: HEIGHT - 160, w: 35, h: 35, hp: 2000},
+  enemyKing: {x: WIDTH/2 - 25, y: 30, w: 50, h: 50, hp: 5000},
+  enemyLeft: {x: WIDTH/2 - 120, y: 120, w: 35, h: 35, hp: 2000},
+  enemyRight: {x: WIDTH/2 + 85, y: 120, w: 35, h: 35, hp: 2000},
 };
 
-// troop types
 const troopTypes = {
-  Knight: {color: "blue", hp: 400, damage: 40, range: 20, speed: 1, cost: 3, target: "any"},
-  Archer: {color: "purple", hp: 250, damage: 30, range: 100, speed: 1.5, cost: 3, target: "any"},
+  Knight: {color: "blue", hp: 400, damage: 40, range: 20, speed: 0.9, cost: 3, target: "any"},
+  Archer: {color: "purple", hp: 250, damage: 30, range: 100, speed: 1.2, cost: 3, target: "any"},
   Giant: {color: "orange", hp: 900, damage: 80, range: 15, speed: 0.6, cost: 5, target: "tower"}
 };
 
@@ -118,56 +125,48 @@ class Troop {
   draw() {
     ctx.fillStyle = this.color;
     ctx.beginPath();
-    ctx.arc(this.x, this.y, 15, 0, Math.PI*2);
+    ctx.arc(this.x, this.y, 12, 0, Math.PI*2);
     ctx.fill();
-    // health bar
+
     ctx.fillStyle = "red";
-    ctx.fillRect(this.x - 15, this.y - 25, 30, 4);
+    ctx.fillRect(this.x - 12, this.y - 20, 24, 4);
     ctx.fillStyle = "lime";
-    ctx.fillRect(this.x - 15, this.y - 25, 30 * (this.hp / troopTypes[this.type].hp), 4);
+    ctx.fillRect(this.x - 12, this.y - 20, 24 * (this.hp / troopTypes[this.type].hp), 4);
   }
   update() {
     const enemies = this.isAI ? troops : aiTroops;
-    let target = null;
+    const enemyTowers = Object.values(towers).filter(t => this.isAI ? t.y > HEIGHT/2 : t.y < HEIGHT/2);
+    let targets = (this.target === "any") ? enemies.concat(enemyTowers) : enemyTowers;
+    let closest = this.findClosest(targets);
+    if (!closest) return;
+    const dx = closest.x - this.x;
+    const dy = closest.y - this.y;
+    const dist = Math.hypot(dx, dy);
 
-    // find closest enemy troop or tower
-    if (this.target === "any") {
-      target = this.findClosest(enemies.concat(Object.values(towers).filter(t => t.isAI !== this.isAI)));
-    } else {
-      target = this.findClosest(Object.values(towers).filter(t => t.isAI !== this.isAI));
-    }
-
-    if (target) {
-      const dx = target.x - this.x;
-      const dy = target.y - this.y;
-      const dist = Math.hypot(dx, dy);
-
-      if (dist > this.range + 10) {
-        const nx = dx / dist;
-        const ny = dy / dist;
-        // prevent crossing river except bridge area
-        if ((this.isAI && this.y < riverY + 30) || (!this.isAI && this.y > riverY + 30)) {
-          if (Math.abs(this.x - WIDTH/2) < bridgeWidth/2) {
-            this.x += nx * this.speed;
-            this.y += ny * this.speed;
-          }
-        } else {
+    if (dist > this.range + 8) {
+      const nx = dx / dist;
+      const ny = dy / dist;
+      // prevent water crossing except bridge
+      if ((this.isAI && this.y < riverY + 25) || (!this.isAI && this.y > riverY + 35)) {
+        if (Math.abs(this.x - WIDTH/2) < bridgeWidth/2) {
           this.x += nx * this.speed;
           this.y += ny * this.speed;
         }
       } else {
-        // attack
-        target.hp -= this.damage * 0.05;
+        this.x += nx * this.speed;
+        this.y += ny * this.speed;
       }
+    } else {
+      closest.hp -= this.damage * 0.05;
     }
   }
   findClosest(targets) {
     let min = Infinity, closest = null;
     for (const t of targets) {
-      const dx = (t.x || (t.x = t.x)) - this.x;
-      const dy = (t.y || (t.y = t.y)) - this.y;
-      const dist = Math.hypot(dx, dy);
-      if (dist < min) { min = dist; closest = t; }
+      const dx = (t.x + (t.w || 0)/2) - this.x;
+      const dy = (t.y + (t.h || 0)/2) - this.y;
+      const d = Math.hypot(dx, dy);
+      if (d < min) { min = d; closest = t; }
     }
     return closest;
   }
@@ -177,19 +176,19 @@ function drawMap() {
   ctx.fillStyle = "#4caf50";
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
   ctx.fillStyle = "#3399ff";
-  ctx.fillRect(0, riverY, WIDTH, 60);
+  ctx.fillRect(0, riverY, WIDTH, 50);
   ctx.fillStyle = "#8b5a2b";
-  ctx.fillRect(WIDTH/2 - bridgeWidth/2, riverY, bridgeWidth, 60);
+  ctx.fillRect(WIDTH/2 - bridgeWidth/2, riverY, bridgeWidth, 50);
 }
 
 function drawTowers() {
   for (const [key, t] of Object.entries(towers)) {
-    ctx.fillStyle = key.includes("player") ? "#444" : "#a00";
+    ctx.fillStyle = key.includes("player") ? "#555" : "#a00";
     ctx.fillRect(t.x, t.y, t.w, t.h);
     ctx.fillStyle = "red";
-    ctx.fillRect(t.x, t.y - 8, t.w, 5);
+    ctx.fillRect(t.x, t.y - 6, t.w, 4);
     ctx.fillStyle = "lime";
-    ctx.fillRect(t.x, t.y - 8, t.w * (t.hp / (key.includes("King") ? 5000 : 2000)), 5);
+    ctx.fillRect(t.x, t.y - 6, t.w * (t.hp / (key.includes("King") ? 5000 : 2000)), 4);
   }
 }
 
@@ -203,35 +202,35 @@ function gameLoop() {
   troops.forEach(t => t.draw());
   aiTroops.forEach(t => t.draw());
 
-  // clean up dead units
   troops = troops.filter(t => t.hp > 0);
   aiTroops = aiTroops.filter(t => t.hp > 0);
 
-  // AI spawn logic
+  // smarter AI spawning
   if (Math.random() < 0.005 && aiTroops.length < 6) {
-    const type = ["Knight", "Archer", "Giant"][Math.floor(Math.random()*3)];
-    aiTroops.push(new Troop(type, WIDTH/2 + (Math.random() * 150 - 75), 120, true));
+    const type = Math.random() < 0.5 ? "Knight" : (Math.random() < 0.8 ? "Archer" : "Giant");
+    aiTroops.push(new Troop(type, WIDTH/2 + (Math.random()*100-50), 100 + Math.random()*50, true));
   }
 
-  // elixir regen
+  // elixir regeneration
   const now = Date.now();
   if (now - lastElixirTime > 2800 && elixir < 10) {
     elixir += 1;
     lastElixirTime = now;
   }
   document.getElementById('elixirFill').style.width = (elixir * 10) + "%";
+  document.getElementById('elixirText').innerText = "Elixir: " + elixir;
 
   requestAnimationFrame(gameLoop);
 }
 gameLoop();
 
-// placing troops
+// troop placement
 canvas.addEventListener('click', e => {
   if (!selectedCard) return;
   const rect = canvas.getBoundingClientRect();
   const x = e.clientX - rect.left;
   const y = e.clientY - rect.top;
-  if (y > HEIGHT/2 + 30 && elixir >= troopTypes[selectedCard].cost) {
+  if (y > HEIGHT/2 + 40 && elixir >= troopTypes[selectedCard].cost) {
     troops.push(new Troop(selectedCard, x, y, false));
     elixir -= troopTypes[selectedCard].cost;
   }
