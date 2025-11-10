@@ -5,16 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Clash Royale Lite</title>
 <style>
-  body {
+  html, body {
     margin: 0;
+    padding: 0;
+    background: #87CEEB;
     overflow: hidden;
-    background-color: #87CEEB;
+    height: 100%;
   }
   canvas {
     display: block;
     margin: 0 auto;
     background: #4CAF50;
-    border: 3px solid #000;
+    border: 2px solid #000;
   }
   #ui {
     position: absolute;
@@ -23,8 +25,8 @@
     text-align: center;
   }
   #elixirBar {
-    width: 300px;
-    height: 20px;
+    width: 250px;
+    height: 18px;
     background: #ccc;
     border: 2px solid #333;
     margin: 0 auto;
@@ -50,8 +52,7 @@
 </style>
 </head>
 <body>
-<canvas id="gameCanvas" width="500" height="900"></canvas>
-
+<canvas id="gameCanvas"></canvas>
 <div id="ui">
   <div id="elixirBar">
     <div id="elixirFill"></div>
@@ -63,66 +64,123 @@
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
-// Map setup
+// Automatically scale to screen
+function resizeCanvas() {
+  canvas.width = window.innerWidth * 0.9;
+  canvas.height = window.innerHeight * 0.9;
+}
+resizeCanvas();
+window.addEventListener("resize", resizeCanvas);
+
+// Map layout
 const map = {
-  width: canvas.width,
-  height: canvas.height,
-  riverY: canvas.height / 2,
+  get width() { return canvas.width; },
+  get height() { return canvas.height; },
+  get riverY() { return this.height / 2; }
 };
 
-// Towers
-const towers = [
-  // Enemy side
-  { x: canvas.width / 2, y: 70, hp: 5000, side: "enemy", main: true },
-  { x: canvas.width / 2 - 100, y: 180, hp: 2000, side: "enemy" },
-  { x: canvas.width / 2 + 100, y: 180, hp: 2000, side: "enemy" },
-  // Player side
-  { x: canvas.width / 2, y: canvas.height - 70, hp: 5000, side: "player", main: true },
-  { x: canvas.width / 2 - 100, y: canvas.height - 180, hp: 2000, side: "player" },
-  { x: canvas.width / 2 + 100, y: canvas.height - 180, hp: 2000, side: "player" },
-];
+// Tower setup
+let towers = [];
+
+function resetTowers() {
+  const w = map.width, h = map.height;
+  towers = [
+    // AI towers
+    { x: w / 2, y: h * 0.08, hp: 5000, side: "enemy", main: true },
+    { x: w / 2 - 100, y: h * 0.18, hp: 2000, side: "enemy" },
+    { x: w / 2 + 100, y: h * 0.18, hp: 2000, side: "enemy" },
+    // Player towers
+    { x: w / 2, y: h * 0.92, hp: 5000, side: "player", main: true },
+    { x: w / 2 - 100, y: h * 0.82, hp: 2000, side: "player" },
+    { x: w / 2 + 100, y: h * 0.82, hp: 2000, side: "player" }
+  ];
+}
+resetTowers();
 
 // Elixir system
 let elixir = 5;
 let maxElixir = 10;
-let elixirRate = 2.8;
-let lastElixirGain = 0;
+let elixirTimer = 0;
 
 // Troops
 let troops = [];
 
 function spawnTroop(side, type, x, y) {
-  let hp = type === "giant" ? 1200 : 400;
-  let dmg = type === "giant" ? 25 : 60;
-  let speed = type === "giant" ? 1.0 : 2.2;
-  troops.push({ x, y, hp, maxHp: hp, type, side, dmg, speed, target: null });
+  let stats = {
+    knight: { hp: 400, dmg: 60, speed: 1.6 },
+    giant: { hp: 1200, dmg: 25, speed: 1.0 },
+    archer: { hp: 200, dmg: 40, speed: 1.8 }
+  }[type];
+  troops.push({ ...stats, type, side, x, y, maxHp: stats.hp, target: null });
 }
 
 // AI logic
 function aiLogic() {
-  if (Math.random() < 0.01) {
-    const x = Math.random() < 0.5 ? 160 : 340;
-    spawnTroop("enemy", Math.random() < 0.5 ? "knight" : "giant", x, 250);
+  if (Math.random() < 0.02) {
+    const laneX = Math.random() < 0.5 ? map.width * 0.35 : map.width * 0.65;
+    const troopType = Math.random() < 0.6 ? "knight" : "giant";
+    spawnTroop("enemy", troopType, laneX, map.height * 0.25);
   }
 }
 
-function draw() {
-  // Field
-  ctx.fillStyle = "#4CAF50";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+function update(delta) {
+  // Elixir regen
+  elixirTimer += delta;
+  if (elixirTimer > 2.8) {
+    elixir = Math.min(maxElixir, elixir + 1);
+    elixirTimer = 0;
+  }
 
+  // Troop AI
+  troops.forEach(t => {
+    let enemies = troops.filter(e => e.side !== t.side);
+    let enemyTowers = towers.filter(e => e.side !== t.side);
+    let candidates = t.type === "giant" ? enemyTowers : enemies.concat(enemyTowers);
+    t.target = candidates.sort((a,b) => Math.hypot(a.x - t.x, a.y - t.y) - Math.hypot(b.x - t.x, b.y - t.y))[0];
+    if (!t.target) return;
+
+    let dx = t.target.x - t.x;
+    let dy = t.target.y - t.y;
+    let dist = Math.hypot(dx, dy);
+
+    // Avoid river unless near bridges
+    const river = map.riverY;
+    const nearBridge = (Math.abs(t.x - map.width * 0.25) < 60 || Math.abs(t.x - map.width * 0.75) < 60);
+    if ((t.y < river - 25 && t.target.y > river + 25) ||
+        (t.y > river + 25 && t.target.y < river - 25)) {
+      if (!nearBridge) return;
+    }
+
+    if (dist > 20) {
+      t.x += (dx / dist) * t.speed;
+      t.y += (dy / dist) * t.speed;
+    } else {
+      t.target.hp -= t.dmg * delta * 0.5;
+    }
+  });
+
+  troops = troops.filter(t => t.hp > 0);
+  towers = towers.filter(t => t.hp > 0);
+}
+
+function draw() {
+  const w = map.width, h = map.height, riverY = map.riverY;
+
+  // Field
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = "#4CAF50";
+  ctx.fillRect(0, 0, w, h);
   // River
   ctx.fillStyle = "#1E90FF";
-  ctx.fillRect(0, map.riverY - 25, canvas.width, 50);
-
+  ctx.fillRect(0, riverY - 20, w, 40);
   // Bridges
   ctx.fillStyle = "#8B4513";
-  ctx.fillRect(90, map.riverY - 8, 80, 16);
-  ctx.fillRect(330, map.riverY - 8, 80, 16);
+  ctx.fillRect(w * 0.25 - 40, riverY - 8, 80, 16);
+  ctx.fillRect(w * 0.75 - 40, riverY - 8, 80, 16);
 
   // Towers
   towers.forEach(t => {
-    ctx.fillStyle = t.side === "player" ? "#3333FF" : "#FF3333";
+    ctx.fillStyle = t.side === "player" ? "#0000FF" : "#FF0000";
     ctx.fillRect(t.x - 15, t.y - 30, 30, 30);
     ctx.fillStyle = "white";
     ctx.font = "10px Arial";
@@ -131,11 +189,11 @@ function draw() {
 
   // Troops
   troops.forEach(t => {
-    ctx.fillStyle = t.type === "giant" ? "#DAA520" : (t.side === "player" ? "#0000FF" : "#FF0000");
+    ctx.fillStyle = t.side === "player" ? "#2222FF" : "#FF2222";
+    if (t.type === "giant") ctx.fillStyle = "#DAA520";
     ctx.beginPath();
     ctx.arc(t.x, t.y, 10, 0, Math.PI * 2);
     ctx.fill();
-
     // HP bar
     ctx.fillStyle = "red";
     ctx.fillRect(t.x - 10, t.y - 18, 20, 3);
@@ -144,64 +202,17 @@ function draw() {
   });
 }
 
-function update(delta) {
-  lastElixirGain += delta;
-  if (lastElixirGain > elixirRate) {
-    elixir = Math.min(maxElixir, elixir + 1);
-    lastElixirGain = 0;
-  }
-
-  // Troop AI
-  troops.forEach(t => {
-    let enemies = troops.filter(e => e.side !== t.side);
-    let towersOnOtherSide = towers.filter(e => e.side !== t.side);
-
-    if (!t.target || t.target.hp <= 0) {
-      let targets = t.type === "giant" ? towersOnOtherSide : enemies.concat(towersOnOtherSide);
-      t.target = targets.sort((a, b) =>
-        Math.hypot(a.x - t.x, a.y - t.y) - Math.hypot(b.x - t.x, b.y - t.y)
-      )[0];
-    }
-
-    if (t.target) {
-      let dx = t.target.x - t.x;
-      let dy = t.target.y - t.y;
-      let dist = Math.hypot(dx, dy);
-
-      // avoid river unless near bridges
-      const nearLeftBridge = Math.abs(t.x - 130) < 80;
-      const nearRightBridge = Math.abs(t.x - 370) < 80;
-      if (
-        (t.y < map.riverY - 25 && t.target.y > map.riverY + 25) ||
-        (t.y > map.riverY + 25 && t.target.y < map.riverY - 25)
-      ) {
-        if (!nearLeftBridge && !nearRightBridge) return;
-      }
-
-      if (dist > 20) {
-        t.x += (dx / dist) * t.speed;
-        t.y += (dy / dist) * t.speed;
-      } else {
-        t.target.hp -= t.dmg * delta * 0.5;
-      }
-    }
-  });
-
-  troops = troops.filter(t => t.hp > 0);
-}
-
+// Game loop
 let last = 0;
-function gameLoop(ts) {
+function loop(ts) {
   const delta = (ts - last) / 1000;
   last = ts;
-  update(delta);
   aiLogic();
+  update(delta);
   draw();
-
   document.getElementById("elixirFill").style.width = (elixir / maxElixir) * 100 + "%";
   document.getElementById("elixirText").innerText = Math.floor(elixir);
-
-  requestAnimationFrame(gameLoop);
+  requestAnimationFrame(loop);
 }
 
 canvas.addEventListener("click", e => {
@@ -211,7 +222,7 @@ canvas.addEventListener("click", e => {
   }
 });
 
-requestAnimationFrame(gameLoop);
+requestAnimationFrame(loop);
 </script>
 </body>
 </html>
