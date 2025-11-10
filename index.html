@@ -50,7 +50,7 @@
 </style>
 </head>
 <body>
-<canvas id="gameCanvas" width="800" height="1200"></canvas>
+<canvas id="gameCanvas" width="500" height="900"></canvas>
 
 <div id="ui">
   <div id="elixirBar">
@@ -72,98 +72,93 @@ const map = {
 
 // Towers
 const towers = [
-  { x: canvas.width / 2, y: 80, hp: 5000, side: "enemy", main: true },
-  { x: canvas.width / 2 - 150, y: 220, hp: 2000, side: "enemy" },
-  { x: canvas.width / 2 + 150, y: 220, hp: 2000, side: "enemy" },
-  { x: canvas.width / 2, y: canvas.height - 80, hp: 5000, side: "player", main: true },
-  { x: canvas.width / 2 - 150, y: canvas.height - 220, hp: 2000, side: "player" },
-  { x: canvas.width / 2 + 150, y: canvas.height - 220, hp: 2000, side: "player" },
+  // Enemy side
+  { x: canvas.width / 2, y: 70, hp: 5000, side: "enemy", main: true },
+  { x: canvas.width / 2 - 100, y: 180, hp: 2000, side: "enemy" },
+  { x: canvas.width / 2 + 100, y: 180, hp: 2000, side: "enemy" },
+  // Player side
+  { x: canvas.width / 2, y: canvas.height - 70, hp: 5000, side: "player", main: true },
+  { x: canvas.width / 2 - 100, y: canvas.height - 180, hp: 2000, side: "player" },
+  { x: canvas.width / 2 + 100, y: canvas.height - 180, hp: 2000, side: "player" },
 ];
 
 // Elixir system
 let elixir = 5;
 let maxElixir = 10;
-let elixirRate = 2.8; // seconds per elixir
+let elixirRate = 2.8;
 let lastElixirGain = 0;
 
 // Troops
 let troops = [];
 
 function spawnTroop(side, type, x, y) {
-  let hp = type === "giant" ? 800 : 300;
+  let hp = type === "giant" ? 1200 : 400;
   let dmg = type === "giant" ? 25 : 60;
-  let speed = type === "giant" ? 1.2 : 2;
+  let speed = type === "giant" ? 1.0 : 2.2;
   troops.push({ x, y, hp, maxHp: hp, type, side, dmg, speed, target: null });
 }
 
-// Simple AI
+// AI logic
 function aiLogic() {
   if (Math.random() < 0.01) {
-    const x = Math.random() < 0.5 ? 200 : 600;
+    const x = Math.random() < 0.5 ? 160 : 340;
     spawnTroop("enemy", Math.random() < 0.5 ? "knight" : "giant", x, 250);
   }
 }
 
-// Draw everything
 function draw() {
-  // Sky + field
+  // Field
   ctx.fillStyle = "#4CAF50";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   // River
   ctx.fillStyle = "#1E90FF";
-  ctx.fillRect(0, map.riverY - 40, canvas.width, 80);
+  ctx.fillRect(0, map.riverY - 25, canvas.width, 50);
 
   // Bridges
   ctx.fillStyle = "#8B4513";
-  ctx.fillRect(150, map.riverY - 10, 100, 20); // left bridge
-  ctx.fillRect(550, map.riverY - 10, 100, 20); // right bridge
+  ctx.fillRect(90, map.riverY - 8, 80, 16);
+  ctx.fillRect(330, map.riverY - 8, 80, 16);
 
   // Towers
   towers.forEach(t => {
     ctx.fillStyle = t.side === "player" ? "#3333FF" : "#FF3333";
-    ctx.beginPath();
-    ctx.rect(t.x - 20, t.y - 40, 40, 40);
-    ctx.fill();
+    ctx.fillRect(t.x - 15, t.y - 30, 30, 30);
     ctx.fillStyle = "white";
-    ctx.font = "12px Arial";
-    ctx.fillText(Math.floor(t.hp), t.x - 20, t.y - 45);
+    ctx.font = "10px Arial";
+    ctx.fillText(Math.floor(t.hp), t.x - 15, t.y - 35);
   });
 
   // Troops
   troops.forEach(t => {
-    if (t.type === "giant") ctx.fillStyle = "#DAA520";
-    else ctx.fillStyle = t.side === "player" ? "#0000FF" : "#FF0000";
-
+    ctx.fillStyle = t.type === "giant" ? "#DAA520" : (t.side === "player" ? "#0000FF" : "#FF0000");
     ctx.beginPath();
-    ctx.arc(t.x, t.y, 15, 0, Math.PI * 2);
+    ctx.arc(t.x, t.y, 10, 0, Math.PI * 2);
     ctx.fill();
 
     // HP bar
     ctx.fillStyle = "red";
-    ctx.fillRect(t.x - 15, t.y - 25, 30, 4);
+    ctx.fillRect(t.x - 10, t.y - 18, 20, 3);
     ctx.fillStyle = "lime";
-    ctx.fillRect(t.x - 15, t.y - 25, 30 * (t.hp / t.maxHp), 4);
+    ctx.fillRect(t.x - 10, t.y - 18, 20 * (t.hp / t.maxHp), 3);
   });
 }
 
 function update(delta) {
-  // Elixir gain
   lastElixirGain += delta;
   if (lastElixirGain > elixirRate) {
     elixir = Math.min(maxElixir, elixir + 1);
     lastElixirGain = 0;
   }
 
-  // Movement + targeting
+  // Troop AI
   troops.forEach(t => {
-    // find nearest enemy troop or tower
     let enemies = troops.filter(e => e.side !== t.side);
     let towersOnOtherSide = towers.filter(e => e.side !== t.side);
 
     if (!t.target || t.target.hp <= 0) {
       let targets = t.type === "giant" ? towersOnOtherSide : enemies.concat(towersOnOtherSide);
-      t.target = targets.sort((a, b) => 
+      t.target = targets.sort((a, b) =>
         Math.hypot(a.x - t.x, a.y - t.y) - Math.hypot(b.x - t.x, b.y - t.y)
       )[0];
     }
@@ -173,15 +168,17 @@ function update(delta) {
       let dy = t.target.y - t.y;
       let dist = Math.hypot(dx, dy);
 
-      // Avoid river except bridges
+      // avoid river unless near bridges
+      const nearLeftBridge = Math.abs(t.x - 130) < 80;
+      const nearRightBridge = Math.abs(t.x - 370) < 80;
       if (
-        (t.y < map.riverY - 40 && t.target.y > map.riverY + 40) ||
-        (t.y > map.riverY + 40 && t.target.y < map.riverY - 40)
+        (t.y < map.riverY - 25 && t.target.y > map.riverY + 25) ||
+        (t.y > map.riverY + 25 && t.target.y < map.riverY - 25)
       ) {
-        if (t.x < 400) t.x = 200; else t.x = 600;
+        if (!nearLeftBridge && !nearRightBridge) return;
       }
 
-      if (dist > 25) {
+      if (dist > 20) {
         t.x += (dx / dist) * t.speed;
         t.y += (dy / dist) * t.speed;
       } else {
@@ -190,19 +187,17 @@ function update(delta) {
     }
   });
 
-  // Cleanup
   troops = troops.filter(t => t.hp > 0);
 }
 
 let last = 0;
-function gameLoop(timestamp) {
-  let delta = (timestamp - last) / 1000;
-  last = timestamp;
+function gameLoop(ts) {
+  const delta = (ts - last) / 1000;
+  last = ts;
   update(delta);
   aiLogic();
   draw();
 
-  // Update elixir bar
   document.getElementById("elixirFill").style.width = (elixir / maxElixir) * 100 + "%";
   document.getElementById("elixirText").innerText = Math.floor(elixir);
 
